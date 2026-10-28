@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-cairo), system-ui, sans-serif;
+  
+  /* Brand Colors */
+  --color-brand-primary: #dda322;
+  --color-brand-secondary: #061228;
+}
+
+body {
+  font-family: var(--font-cairo), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Force LTR direction for tables and data grids */
+.force-ltr {
+  direction: ltr;
+  text-align: left;
+}
+
+/* Ensure numbers inside LTR tables don't flip */
+.force-ltr td, 
+.force-ltr th {
+  text-align: left;
+}
+
+/* Print Styles for Invoices */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-container, .print-container * {
+    visibility: visible;
+  }
+  .print-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 20px;
+    box-shadow: none;
+    border: none;
+  }
+  .print-hidden {
+    display: none !important;
+  }
+}

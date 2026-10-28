@@ -1,0 +1,592 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  STAFF
+}
+
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  FULFILLED
+  CANCELLED
+}
+
+enum StockMovementType {
+  STOCK_IN
+  STOCK_OUT
+  ADJUSTMENT
+  
+}
+
+enum OfferStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CONVERTED_TO_ORDER
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CONFIRMED
+  CANCELLED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(STAFF)
+  isActive  Boolean  @default(true) 
+  createdAt DateTime @default(now())
+  permission Permission?
+  
+  // Relations
+  createdOrders SalesOrder[]
+  purchaseOrders PurchaseOrder[]
+  
+  createdOffers  PriceOffer[] @relation("OfferCreator")
+  approvedOffers PriceOffer[] @relation("OfferApprover")
+  approvedPurchaseOrders PurchaseOrder[] @relation("POApprover")
+
+  employee     Employee?
+  leavesApproved Leave[]
+  activityLogs ActivityLog[]
+
+}
+
+model Product {
+  id           String   @id @default(cuid())
+  sku          String   @unique
+  name         String
+  description  String?
+  category     String?
+  unit         String   // e.g., "pcs", "kg"
+  costPrice    Decimal?  @db.Decimal(10, 2)
+  costPriceUSD   Decimal  @db.Decimal(10, 2) @default(0)
+  sellPriceUSD   Decimal  @db.Decimal(10, 2) @default(0)
+
+  power         Float?    
+  volt          Float?    
+
+  // sellPrice    Decimal  @db.Decimal(10, 2)
+  // DESIGN DECISION: currentStock is a cached, read-optimized value. 
+  // The absolute source of truth is the sum of related StockMovement entries. 
+  // This field is updated atomically by the backend whenever a StockMovement is created, 
+  // preventing expensive SUM() queries on every page load while maintaining auditability.
+  currentStock Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  stockMovements StockMovement[]
+  orderItems     OrderItem[]
+
+  priceOfferItems PriceOfferItem[]
+  purchaseOrderItems PurchaseOrderItem[]
+
+  
+  depositItems  DepositItem[]
+  custodyItems  CustodyItem[]
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+
+  area              String?   // City/Area
+  fieldOfWork       String?   // Industry/Business type
+  defaultPercentage Decimal  @default(0) @db.Decimal(5, 2)
+
+  salePercentage Decimal  @db.Decimal(5, 2) @default(0) // Markup percentage (e.g., 20.00 = 20%)
+  createdAt DateTime @default(now())
+  updatedAt      DateTime? @updatedAt
+
+  // Relations
+  priceOffers PriceOffer[]
+  invoices    Invoice[]
+  contacts          CustomerContact[] 
+  salesOrders       SalesOrder[]
+
+}
+
+model SalesOrder {
+  id            String      @id @default(cuid())
+  orderNumber   String      @unique // e.g., "SO-0001"
+  customerId    String
+  status        OrderStatus @default(DRAFT)
+  total         Decimal     @db.Decimal(10, 2) @default(0)
+  createdById   String
+  createdAt     DateTime    @default(now())
+  convertedFromOfferId String?  @unique // Links back to the PriceOffer if created from one
+
+  // Relations
+  customer  Customer    @relation(fields: [customerId], references: [id])
+  createdBy User        @relation(fields: [createdById], references: [id])
+  items     OrderItem[]
+  stockMovements StockMovement[] // Optional link for STOCK_OUT movements tied to this order
+  convertedFromOffer PriceOffer? @relation("OfferToSalesOrder", fields: [convertedFromOfferId], references: [id])
+
+  invoice     Invoice?
+
+  priceOfferId   String?
+  priceOffer     PriceOffer? @relation(fields: [priceOfferId], references: [id])
+}
+
+model OrderItem {
+  id            String  @id @default(cuid())
+  salesOrderId  String
+  productId     String
+  quantity      Int
+  unitPrice     Decimal @db.Decimal(10, 2)
+  lineTotal     Decimal @db.Decimal(10, 2)
+
+  // Relations
+  salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId], references: [id])
+}
+
+model StockMovement {
+  id             String            @id @default(cuid())
+  productId      String
+  type           StockMovementType
+  quantity       Int               // Positive for IN, negative for OUT/ADJUSTMENT (or store as absolute and use type)
+  reason         String
+  relatedOrderId String?           // Nullable relation to SalesOrder if this movement was caused by a sale
+  createdAt      DateTime          @default(now())
+
+  // Relations
+  product      Product      @relation(fields: [productId], references: [id])
+  salesOrder   SalesOrder?  @relation(fields: [relatedOrderId], references: [id])
+
+  relatedPurchaseOrderId String?
+  purchaseOrder          PurchaseOrder? @relation(fields: [relatedPurchaseOrderId], references: [id])
+}
+
+model PriceOffer {
+  id                   String      @id @default(cuid())
+  offerNumber          String      @unique // e.g., "PO-0001"
+  customerId           String
+  status               OfferStatus @default(DRAFT)
+  total                Decimal     @db.Decimal(10, 2) @default(0)
+  createdById          String      // The sales person who created it
+  approvedById         String?     // The admin who approved it (nullable)
+  convertedOrderNumber String?     // The SO-XXXX number if converted (nullable)
+  notes                String?     // Optional notes/terms for the offer
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+  convertedOrder SalesOrder? @relation("OfferToSalesOrder")
+  defaultPercentage Decimal  @default(0) @db.Decimal(5, 2) // ✅ ADD THIS
+
+
+  // Relations
+  customer   Customer           @relation(fields: [customerId], references: [id])
+  createdBy  User               @relation("OfferCreator", fields: [createdById], references: [id])
+  approvedBy User?              @relation("OfferApprover", fields: [approvedById], references: [id])
+  items      PriceOfferItem[]
+  salesOrders    SalesOrder[]
+}
+
+model PriceOfferItem {
+  id           String  @id @default(cuid())
+  priceOfferId String
+  productId    String
+  quantity     Int
+  unitPrice    Decimal @db.Decimal(10, 2)
+  lineTotal    Decimal @db.Decimal(10, 2)
+
+  // Relations
+  priceOffer PriceOffer @relation(fields: [priceOfferId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId], references: [id])
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+  createdAt DateTime @default(now())
+
+  purchaseOrders PurchaseOrder[]
+}
+
+model PurchaseOrder {
+  id          String              @id @default(cuid())
+  poNumber    String              @unique // e.g., "PO-0001"
+  supplierId  String
+  status      PurchaseOrderStatus @default(DRAFT)
+  total       Decimal             @db.Decimal(10, 2) @default(0)
+  notes       String?
+  createdById String
+  createdAt   DateTime            @default(now())
+  approvedById String?
+  approvedBy   User? @relation("POApprover", fields: [approvedById], references: [id])
+
+  supplier       Supplier            @relation(fields: [supplierId], references: [id])
+  createdBy      User                @relation(fields: [createdById], references: [id])
+  items          PurchaseOrderItem[]
+  stockMovements StockMovement[]
+}
+
+model PurchaseOrderItem {
+  id              String  @id @default(cuid())
+  purchaseOrderId String
+  productId       String?
+  productName     String?
+  unit            String? 
+  quantity        Int
+  unitCost        Decimal @db.Decimal(10, 2) // what we pay the supplier
+  lineTotal       Decimal @db.Decimal(10, 2)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product       Product?      @relation(fields: [productId], references: [id]) 
+}
+
+model Permission {
+  id        String @id @default(cuid())
+  userId    String @unique
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Page Access Permissions
+  canViewDashboard      Boolean @default(true)
+  canViewProducts       Boolean @default(true)
+  canViewCustomers      Boolean @default(true)
+  canViewSuppliers      Boolean @default(true)
+  canViewPurchaseOrders Boolean @default(true)
+  canViewPriceOffers    Boolean @default(true)
+  canDeletePriceOffers  Boolean @default(false) 
+  canViewSalesOrders    Boolean @default(true)
+  canViewUsers          Boolean @default(false)
+
+  
+  // Product Permissions
+  canCreateProducts Boolean @default(false)
+  canEditProducts   Boolean @default(false)
+  canDeleteProducts Boolean @default(false)
+  canAdjustStock    Boolean @default(false)
+  
+  // Customer Permissions
+  canCreateCustomers Boolean @default(true)
+  canEditCustomers   Boolean @default(true)
+  
+  // Supplier Permissions
+  canCreateSuppliers Boolean @default(false)
+  canEditSuppliers   Boolean @default(false)
+  
+  // Purchase Order Permissions
+  canCreatePurchaseOrders Boolean @default(false)
+  canApprovePurchaseOrders Boolean @default(false)
+  canConfirmPurchaseOrders Boolean @default(false)
+  
+  // Price Offer Permissions
+  canCreatePriceOffers Boolean @default(true)
+  canApprovePriceOffers Boolean @default(false)
+  canConvertPriceOffers Boolean @default(true)
+  canViewAllPriceOffers Boolean @default(false) 
+  
+  // Sales Order Permissions
+  canCreateSalesOrders Boolean @default(false)
+  canConfirmSalesOrders Boolean @default(true)
+  
+  // User Management Permissions
+  canCreateUsers Boolean @default(false)
+  canDeleteUsers Boolean @default(false)
+  
+  // Export Permissions
+  canExportData Boolean @default(true)
+
+  canViewHR Boolean @default(false)
+  canManageEmployees Boolean @default(false) // Create, edit, delete employees/departments
+  canManageLeaves Boolean @default(false)    // Approve/reject vacation requests
+  canManagePayroll Boolean @default(false)   // View and generate payroll
+  
+  canManageSettings Boolean @default(false)
+  canViewReports    Boolean @default(false)
+  canViewActivityLog Boolean @default(false)
+
+  canViewDeposits      Boolean @default(false)
+  canManageDeposits    Boolean @default(false)
+  canViewCustodies     Boolean @default(false)
+  canManageCustodies   Boolean @default(false)
+
+  canManageUsdRate     Boolean @default(false)
+  canDeleteCustomers   Boolean @default(false)
+
+  canEditEmployees     Boolean @default(false)
+  canDeleteEmployees   Boolean @default(false)
+  canViewEmployees   Boolean @default(false)
+
+  canDeleteSuppliers   Boolean @default(false)
+
+  
+  canViewInvoices    Boolean @default(false) 
+  canManageInvoices  Boolean @default(false) 
+}
+
+
+model Department {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  employees Employee[]
+  createdAt DateTime   @default(now())
+}
+
+
+
+
+model Employee {
+  id           String         @id @default(cuid())
+  userId       String?        @unique // Optional link to a system User
+  user         User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  firstName    String
+  lastName     String
+  email        String?
+  phone        String?
+  jobTitle     String
+  departmentId String?
+  department   Department?    @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  
+  hireDate     DateTime
+  basicSalary  Decimal        @db.Decimal(10, 2)
+  status       EmployeeStatus @default(ACTIVE)
+  
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  leaves       Leave[]
+  payslips    Payslip[]
+
+  custodies     Custody[] 
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  TERMINATED
+  ON_LEAVE
+}
+
+enum LeaveType {
+  ANNUAL
+  SICK
+  UNPAID
+  EMERGENCY
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Leave {
+  id           String      @id @default(cuid())
+  employeeId   String
+  employee     Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  
+  type         LeaveType
+  startDate    DateTime
+  endDate      DateTime
+  reason       String?
+  
+  status       LeaveStatus @default(PENDING)
+  approvedById String?
+  approvedBy   User?       @relation(fields: [approvedById], references: [id], onDelete: SetNull)
+  
+  createdAt    DateTime    @default(now())
+}
+
+enum PayslipStatus {
+  DRAFT
+  PAID
+}
+
+model Payslip {
+  id          String        @id @default(cuid())
+  employeeId  String
+  employee    Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  
+  month       DateTime      // We will store the 1st day of the month (e.g., 2023-10-01)
+  basicSalary Decimal       @db.Decimal(10, 2)
+  bonuses     Decimal       @db.Decimal(10, 2) @default(0)
+  deductions  Decimal       @db.Decimal(10, 2) @default(0)
+  netSalary   Decimal       @db.Decimal(10, 2)
+  
+  status      PayslipStatus @default(DRAFT)
+  paidAt      DateTime?
+  
+  createdAt   DateTime      @default(now())
+}
+
+
+model CompanySettings {
+  id             String   @id @default(cuid())
+  companyName    String   @default("Smart Generation ERP")
+  logoUrl        String?
+  address        String?
+  phone          String?
+  email          String?
+  taxRate        Decimal  @default(0) @db.Decimal(5, 2)
+  currencySymbol String   @default("$")
+  updatedAt      DateTime @updatedAt
+
+  usdToEgpRate   Decimal  @default(50) @db.Decimal(10, 2)
+}
+
+
+enum InvoiceStatus {
+  DRAFT
+  PAID
+}
+
+model Invoice {
+  id            String         @id @default(cuid())
+  invoiceNumber String         @unique
+  salesOrderId  String         @unique
+  salesOrder    SalesOrder     @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  customerId    String
+  customer      Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  issueDate     DateTime       @default(now())
+  dueDate       DateTime?
+  
+  subtotal      Decimal        @db.Decimal(10, 2)
+  taxRate       Decimal        @db.Decimal(5, 2) @default(0) // Stored at time of generation
+  taxAmount     Decimal        @db.Decimal(10, 2) @default(0)
+  total         Decimal        @db.Decimal(10, 2)
+  
+  status        InvoiceStatus  @default(DRAFT)
+  paidAt        DateTime?
+  
+  createdAt     DateTime       @default(now())
+}
+
+enum ActivityAction {
+  CREATE
+  UPDATE
+  DELETE
+  APPROVE
+  REJECT
+  CONFIRM
+  CONVERT
+  LOGIN
+  LOGOUT
+  EXPORT
+  PAY
+  BORROW   
+  SELL     
+  RETURN   
+  ADD_ITEM      
+  REMOVE_ITEM   
+  SUBMIT        
+}
+
+model ActivityLog {
+  id         String         @id @default(cuid())
+  userId     String?
+  user       User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  action     ActivityAction
+  entityType String         // e.g., "Product", "SalesOrder", "User"
+  entityId   String?        // The ID of the affected record
+  entityName String?        // Human-readable name (e.g., "Product X")
+  
+  details    String?        // Additional context (JSON or plain text)
+  ipAddress  String?
+  
+  createdAt  DateTime       @default(now())
+  
+  @@index([createdAt])
+  @@index([entityType])
+  @@index([userId])
+}
+
+enum DepositRecipientType {
+  COMPANY
+  PERSON
+}
+
+enum DepositItemStatus {
+  BORROWED
+  SOLD
+  RETURNED
+}
+
+model Deposit {
+  id            String                @id @default(cuid())
+  recipientName String
+  recipientType DepositRecipientType
+  date          DateTime              @default(now())
+  notes         String?
+  status        String                @default("ACTIVE") // ACTIVE, COMPLETED
+  createdAt     DateTime              @default(now())
+  items         DepositItem[]
+}
+
+model DepositItem {
+  id            String              @id @default(cuid())
+  depositId     String
+  deposit       Deposit             @relation(fields: [depositId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product             @relation(fields: [productId], references: [id])
+  quantity      Int
+  status        DepositItemStatus   @default(BORROWED)
+  soldDate      DateTime?
+  soldCostPrice Decimal?            @db.Decimal(10, 2)
+  returnedDate  DateTime?
+}
+
+enum CustodyItemStatus {
+  BORROWED
+  SOLD
+  RETURNED
+}
+
+model Custody {
+  id         String        @id @default(cuid())
+  employeeId String
+  employee   Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date       DateTime      @default(now())
+  notes      String?
+  status     String        @default("ACTIVE")
+  createdAt  DateTime      @default(now())
+  items      CustodyItem[]
+}
+
+model CustodyItem {
+  id            String             @id @default(cuid())
+  custodyId     String
+  custody       Custody            @relation(fields: [custodyId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product            @relation(fields: [productId], references: [id])
+  quantity      Int
+  status        CustodyItemStatus  @default(BORROWED)
+  soldDate      DateTime?
+  soldCostPrice Decimal?           @db.Decimal(10, 2)
+  returnedDate  DateTime?
+}
+
+model CustomerContact {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  name       String
+  jobTitle   String?
+  phone      String?
+  createdAt  DateTime @default(now())
+}
