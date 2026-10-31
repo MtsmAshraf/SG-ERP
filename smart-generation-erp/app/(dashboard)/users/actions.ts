@@ -58,7 +58,12 @@ export async function createUser(formData: FormData) {
           canDeleteSuppliers: true,
           canViewInvoices: true,
           canViewAllPriceOffers: true,
-          canManageInvoices: true
+          canManageInvoices: true,
+          canViewWarehouse: true,
+          canManageWarehouse: true,
+          canViewAllCustomers: true,
+          canViewMaintenance: true,
+          canManageMaintenance: true
 
         }
       : {
@@ -80,7 +85,12 @@ export async function createUser(formData: FormData) {
           canDeleteSuppliers: false,
           canViewInvoices: false,
           canViewAllPriceOffers: false,
-          canManageInvoices: false
+          canManageInvoices: false,
+          canViewWarehouse: false,
+          canManageWarehouse: false,
+          canViewAllCustomers: false,
+          canViewMaintenance: false,
+          canManageMaintenance: false
 
         }
 
@@ -127,6 +137,7 @@ export async function updateUserPermissions(prevState: any, formData: FormData) 
     canViewSalesOrders: formData.get("canViewSalesOrders") === "on",
     canViewUsers: formData.get("canViewUsers") === "on",
     canCreateProducts: formData.get("canCreateProducts") === "on",
+    canViewAllPriceOffers: formData.get("canViewAllPriceOffers") === "on", 
     canEditProducts: formData.get("canEditProducts") === "on",
     canDeleteProducts: formData.get("canDeleteProducts") === "on",
     canAdjustStock: formData.get("canAdjustStock") === "on",
@@ -166,6 +177,11 @@ export async function updateUserPermissions(prevState: any, formData: FormData) 
     canManageInvoices: formData.get("canManageInvoices") === "on",
     canViewInvoices: formData.get("canViewInvoices") === "on",
     canViewAllInvoices: formData.get("canViewAllInvoices") === "on",
+    canViewWarehouse: formData.get("canViewWarehouse") === "on",
+    canManageWarehouse: formData.get("canManageWarehouse") === "on",
+    canViewAllCustomers: formData.get("canViewAllCustomers") === "on",
+    canViewMaintenance: formData.get("canViewMaintenance") === "on",
+    canManageMaintenance: formData.get("canManageMaintenance") === "on",
   }
 
   try {

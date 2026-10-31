@@ -118,7 +118,7 @@ export default async function PurchaseOrderDetailsPage({ params }: { params: Pro
         
         {canEdit && (
           <div className="p-6 border-b">
-            <AddPOItemForm purchaseOrderId={po.id} products={products} />
+            <AddPOItemForm purchaseOrderId={po.id} />
           </div>
         )}
 

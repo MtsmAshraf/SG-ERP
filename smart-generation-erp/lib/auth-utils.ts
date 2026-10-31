@@ -71,7 +71,13 @@ export async function getUserPermissions() {
       canDeleteSuppliers: true,
       canViewInvoices: true,
       canViewAllPriceOffers: true,
-      canManageInvoices: true
+      canManageInvoices: true,
+      canViewWarehouse: true,
+      canManageWarehouse: true,
+      canViewAllCustomers: true,
+      canViewMaintenance: true,
+      canManageMaintenance: true
+
     }
   }
   

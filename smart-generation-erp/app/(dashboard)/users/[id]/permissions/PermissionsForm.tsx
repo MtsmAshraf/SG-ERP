@@ -80,9 +80,14 @@ export function PermissionsForm({ userId, userName, userRole, userEmail, permiss
               <PermissionToggle name="canViewSuppliers" label="الموردين" description="عرض قائمة الموردين والتفاصيل" defaultChecked={permissions.canViewSuppliers ?? true} />
               <PermissionToggle name="canViewPurchaseOrders" label="أوامر الشراء" description="عرض قائمة أوامر الشراء" defaultChecked={permissions.canViewPurchaseOrders ?? true} />
               <PermissionToggle name="canViewPriceOffers" label="عروض الأسعار" description="عرض قائمة عروض الأسعار" defaultChecked={permissions.canViewPriceOffers ?? true} />
+              <PermissionToggle name="canViewAllPriceOffers" label="عرض جميع عروض الأسعار" description="عرض عروض الأسعار لجميع المستخدمين" defaultChecked={permissions.canViewAllPriceOffers ?? false} />
               <PermissionToggle name="canViewSalesOrders" label="أوامر البيع" description="عرض قائمة أوامر البيع" defaultChecked={permissions.canViewSalesOrders ?? true} />
+              <PermissionToggle name="canViewInvoices" label="الفواتير" description="عرض قائمة الفواتير" defaultChecked={permissions.canViewInvoices ?? false} />
+              <PermissionToggle name="canViewAllInvoices" label="عرض جميع الفواتير" description="عرض فواتير جميع العملاء" defaultChecked={permissions.canViewAllInvoices ?? false} />
+              <PermissionToggle name="canViewWarehouse" label="المخزن" description="عرض صفحة المخزن الرئيسي" defaultChecked={permissions.canViewWarehouse ?? false} />
               <PermissionToggle name="canViewUsers" label="إدارة المستخدمين" description="عرض وإدارة المستخدمين الآخرين" defaultChecked={permissions.canViewUsers ?? false} />
               <PermissionToggle name="canViewHR" label="الموارد البشرية" description="الوصول إلى صفحة الموارد البشرية" defaultChecked={permissions.canViewHR ?? true} />
+              <PermissionToggle name="canViewEmployees" label="عرض الموظفين" description="عرض قائمة الموظفين" defaultChecked={permissions.canViewEmployees ?? false} />
             </div>
           </section>
 
@@ -97,16 +102,21 @@ export function PermissionsForm({ userId, userName, userRole, userEmail, permiss
             </div>
           </section>
 
-              {/* ✅ New Section for USD Rate Management */}
-              <div className="border-t pt-4 mt-4">
-                <h3 className="text-sm font-bold text-[#061228] mb-3">الإعدادات المالية</h3>
-                <PermissionToggle 
-                  name="canManageUsdRate" 
-                  label="إدارة سعر الصرف" 
-                  description="تحديث سعر الدولار في صفحة المنتجات" 
-                  defaultChecked={permissions.canManageUsdRate ?? false} 
-                />
-              </div>
+          {/* Warehouse Actions */}
+          <section className="rounded-lg border bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-bold text-[#061228]">إجراءات المخزن</h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <PermissionToggle name="canManageWarehouse" label="إدارة المخزن" description="إدخال وإخراج المخزون" defaultChecked={permissions.canManageWarehouse ?? false} />
+            </div>
+          </section>
+
+          {/* Financial Settings */}
+          <section className="rounded-lg border bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-bold text-[#061228]">الإعدادات المالية</h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <PermissionToggle name="canManageUsdRate" label="إدارة سعر الصرف" description="تحديث سعر الدولار في صفحة المنتجات" defaultChecked={permissions.canManageUsdRate ?? false} />
+            </div>
+          </section>
 
           {/* Customer & Supplier Actions */}
           <section className="rounded-lg border bg-white p-6 shadow-sm">
@@ -114,9 +124,11 @@ export function PermissionsForm({ userId, userName, userRole, userEmail, permiss
             <div className="grid gap-3 sm:grid-cols-2">
               <PermissionToggle name="canCreateCustomers" label="إنشاء عملاء" description="إضافة عملاء جدد" defaultChecked={permissions.canCreateCustomers ?? true} />
               <PermissionToggle name="canEditCustomers" label="تعديل عملاء" description="تعديل بيانات العملاء" defaultChecked={permissions.canEditCustomers ?? true} />
+              <PermissionToggle name="canDeleteCustomers" label="حذف عملاء" description="حذف بيانات العملاء" defaultChecked={permissions.canDeleteCustomers ?? false} />
               <PermissionToggle name="canCreateSuppliers" label="إنشاء موردين" description="إضافة موردين جدد" defaultChecked={permissions.canCreateSuppliers ?? false} />
               <PermissionToggle name="canEditSuppliers" label="تعديل موردين" description="تعديل بيانات الموردين" defaultChecked={permissions.canEditSuppliers ?? false} />
-              <PermissionToggle name="canDeleteCustomers" label="حذف عملاء" description="حذف بيانات العملاء" defaultChecked={permissions.canDeleteCustomers ?? false} />
+              <PermissionToggle name="canDeleteSuppliers" label="حذف موردين" description="حذف بيانات الموردين" defaultChecked={permissions.canDeleteSuppliers ?? false} />
+              <PermissionToggle name="canViewAllCustomers" label="عرض جميع العملاء" description="عرض قائمة كاملة بالعملاء" defaultChecked={permissions.canViewAllCustomers ?? false} />
             </div>
           </section>
 
@@ -137,6 +149,7 @@ export function PermissionsForm({ userId, userName, userRole, userEmail, permiss
               <PermissionToggle name="canCreatePriceOffers" label="إنشاء عروض أسعار" description="إنشاء عروض أسعار جديدة" defaultChecked={permissions.canCreatePriceOffers ?? true} />
               <PermissionToggle name="canApprovePriceOffers" label="اعتماد عروض أسعار" description="اعتماد أو رفض العروض المعلقة" defaultChecked={permissions.canApprovePriceOffers ?? false} />
               <PermissionToggle name="canConvertPriceOffers" label="تحويل لأوامر بيع" description="تحويل العروض المعتمدة إلى أوامر بيع" defaultChecked={permissions.canConvertPriceOffers ?? true} />
+              <PermissionToggle name="canDeletePriceOffers" label="حذف عروض أسعار" description="حذف عروض الأسعار" defaultChecked={permissions.canDeletePriceOffers ?? false} />
             </div>
           </section>
 
@@ -149,12 +162,62 @@ export function PermissionsForm({ userId, userName, userRole, userEmail, permiss
             </div>
           </section>
 
+          {/* Invoice Actions */}
+          <section className="rounded-lg border bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-bold text-[#061228]">إجراءات الفواتير</h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <PermissionToggle name="canManageInvoices" label="إدارة الفواتير" description="إنشاء وتعديل الفواتير" defaultChecked={permissions.canManageInvoices ?? false} />
+            </div>
+          </section>
+
           {/* User Management Actions */}
           <section className="rounded-lg border bg-white p-6 shadow-sm">
             <h2 className="mb-4 text-lg font-bold text-[#061228]">إدارة المستخدمين</h2>
             <div className="grid gap-3 sm:grid-cols-2">
               <PermissionToggle name="canCreateUsers" label="إنشاء مستخدمين" description="إضافة مستخدمين جدد للنظام" defaultChecked={permissions.canCreateUsers ?? false} />
               <PermissionToggle name="canDeleteUsers" label="حذف مستخدمين" description="حذف مستخدمين من النظام" defaultChecked={permissions.canDeleteUsers ?? false} />
+            </div>
+          </section>
+
+          {/* HR Actions */}
+          <section className="rounded-lg border bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-bold text-[#061228]">الموارد البشرية</h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <PermissionToggle name="canManageEmployees" label="إدارة الموظفين" description="إضافة وتعديل بيانات الموظفين والأقسام" defaultChecked={permissions.canManageEmployees ?? false} />
+              <PermissionToggle name="canEditEmployees" label="تعديل الموظفين" description="تعديل بيانات الموظفين" defaultChecked={permissions.canEditEmployees ?? false} />
+              <PermissionToggle name="canDeleteEmployees" label="حذف الموظفين" description="حذف الموظفين من النظام" defaultChecked={permissions.canDeleteEmployees ?? false} />
+              <PermissionToggle name="canManageLeaves" label="إدارة الإجازات" description="اعتماد أو رفض طلبات الإجازة" defaultChecked={permissions.canManageLeaves ?? false} />
+              <PermissionToggle name="canManagePayroll" label="إدارة الرواتب" description="عرض وإنشاء كشوف الرواتب الشهرية" defaultChecked={permissions.canManagePayroll ?? false} />
+            </div>
+          </section>
+
+          {/* Deposits & Custodies */}
+          <section className="rounded-lg border bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-bold text-[#061228]">الأمانات والعهد</h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <PermissionToggle name="canViewDeposits" label="عرض الأمانات" description="عرض سجلات الأمانات" defaultChecked={permissions.canViewDeposits ?? false} />
+              <PermissionToggle name="canManageDeposits" label="إدارة الأمانات" description="إنشاء، بيع، أو إرجاع الأمانات" defaultChecked={permissions.canManageDeposits ?? false} />
+              <PermissionToggle name="canViewCustodies" label="عرض العهد" description="عرض سجلات العهد" defaultChecked={permissions.canViewCustodies ?? false} />
+              <PermissionToggle name="canManageCustodies" label="إدارة العهد" description="إنشاء، بيع، أو إرجاع العهد" defaultChecked={permissions.canManageCustodies ?? false} />
+            </div>
+          </section>
+
+          {/* Maintenance */}
+          <section className="rounded-lg border bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-bold text-[#061228]">الصيانة</h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <PermissionToggle 
+                name="canViewMaintenance" 
+                label="عرض الصيانة" 
+                description="عرض قائمة طلبات الصيانة" 
+                defaultChecked={permissions.canViewMaintenance ?? true} 
+              />
+              <PermissionToggle 
+                name="canManageMaintenance" 
+                label="إدارة الصيانة" 
+                description="إنشاء وتحديث وإرجاع طلبات الصيانة" 
+                defaultChecked={permissions.canManageMaintenance ?? false} 
+              />
             </div>
           </section>
 
@@ -166,66 +229,22 @@ export function PermissionsForm({ userId, userName, userRole, userEmail, permiss
             </div>
           </section>
 
-          {/* HR Actions */}
+          {/* System Settings */}
           <section className="rounded-lg border bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-lg font-bold text-[#061228]">الموارد البشرية</h2>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <PermissionToggle name="canViewHR" label="عرض الموارد البشرية" description="الوصول إلى صفحة الموارد البشرية" defaultChecked={permissions.canViewHR ?? true} />
-              <PermissionToggle name="canManageEmployees" label="إدارة الموظفين" description="إضافة وتعديل بيانات الموظفين والأقسام" defaultChecked={permissions.canManageEmployees ?? false} />
-              <PermissionToggle name="canManageLeaves" label="إدارة الإجازات" description="اعتماد أو رفض طلبات الإجازة" defaultChecked={permissions.canManageLeaves ?? false} />
-              <PermissionToggle name="canManagePayroll" label="إدارة الرواتب" description="عرض وإنشاء كشوف الرواتب الشهرية" defaultChecked={permissions.canManagePayroll ?? false} />
-            </div>
-          </section>
-
-         <section className="rounded-lg border bg-white p-6 shadow-sm">
             <h2 className="mb-4 text-lg font-bold text-[#061228]">إعدادات النظام</h2>
             <div className="grid gap-3 sm:grid-cols-2">
-              <PermissionToggle 
-                name="canManageSettings" 
-                label="إدارة الإعدادات" 
-                description="تعديل بيانات الشركة والشعار والضرائب" 
-                defaultChecked={permissions.canManageSettings ?? false} 
-              />
+              <PermissionToggle name="canManageSettings" label="إدارة الإعدادات" description="تعديل بيانات الشركة والشعار والضرائب" defaultChecked={permissions.canManageSettings ?? false} />
             </div>
           </section>
 
-          
-         <section className="rounded-lg border bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-lg font-bold text-[#061228]">عرض التقارير</h2>
-            <div className="grid gap-3 sm:grid-cols-2">
-             <PermissionToggle name="canViewReports" label="عرض التقارير" description="الوصول إلى صفحة التحليلات والتقارير" defaultChecked={permissions.canViewReports ?? false} />
-            </div>
-          </section>
-
-         <section className="rounded-lg border bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-lg font-bold text-[#061228]">عرض التقارير</h2>
-            <div className="grid gap-3 sm:grid-cols-2">
-            <PermissionToggle 
-              name="canViewActivityLog" 
-              label="عرض سجل النشاط" 
-              description="الوصول إلى صفحة سجل النشاط والتدقيق" 
-              defaultChecked={permissions.canViewActivityLog ?? false} 
-            />
-            </div>
-          </section>
-
-        
+          {/* Reports & Logs */}
           <section className="rounded-lg border bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-lg font-bold text-[#061228]">بيانات الأمانة</h2>
+            <h2 className="mb-4 text-lg font-bold text-[#061228]">التقارير والسجلات</h2>
             <div className="grid gap-3 sm:grid-cols-2">
-              <PermissionToggle name="canViewDeposits" label="عرض الأمانات" description="عرض سجلات الأمانات" defaultChecked={permissions.canViewDeposits ?? false} />
-              <PermissionToggle name="canManageDeposits" label="إدارة الأمانات" description="إنشاء، بيع، أو إرجاع الأمانات" defaultChecked={permissions.canManageDeposits ?? false} />
+              <PermissionToggle name="canViewReports" label="عرض التقارير" description="الوصول إلى صفحة التحليلات والتقارير" defaultChecked={permissions.canViewReports ?? false} />
+              <PermissionToggle name="canViewActivityLog" label="عرض سجل النشاط" description="الوصول إلى صفحة سجل النشاط والتدقيق" defaultChecked={permissions.canViewActivityLog ?? false} />
             </div>
           </section>
-
-          <section className="rounded-lg border bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-lg font-bold text-[#061228]">بيان العهدة</h2>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <PermissionToggle name="canViewCustodies" label="عرض العهد" description="عرض سجلات العهد" defaultChecked={permissions.canViewCustodies ?? false} />
-              <PermissionToggle name="canManageCustodies" label="إدارة العهد" description="إنشاء، بيع، أو إرجاع العهد" defaultChecked={permissions.canManageCustodies ?? false} />
-            </div>
-          </section>
-
 
           <div className="flex justify-end gap-3 border-t pt-6">
             <Link href="/users" className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">

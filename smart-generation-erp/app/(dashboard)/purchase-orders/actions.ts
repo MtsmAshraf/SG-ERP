@@ -7,6 +7,7 @@ import { redirect } from "next/navigation"
 import { auth } from "@/auth"
 import { logActivity } from "@/lib/activity-log"
 import { getUsdToEgpRate } from "@/lib/usd-rate"
+import { notifyUser, notifyUsersWithPermission } from "@/lib/notifications"
 
 export async function createPurchaseOrder(formData: FormData) {
   await requirePermission("canCreatePurchaseOrders")
@@ -133,6 +134,17 @@ export async function submitPOForApproval(formData: FormData) {
 
   await prisma.purchaseOrder.update({ where: { id: purchaseOrderId }, data: { status: "PENDING_APPROVAL" } })
 
+    // ✅ Notify all users who can approve purchase orders
+  await notifyUsersWithPermission("canApprovePurchaseOrders", {
+    type: "PURCHASE_ORDER_SUBMITTED",
+    title: "أمر شراء جديد بانتظار الاعتماد",
+    message: `تم إرسال أمر الشراء ${po.poNumber} بواسطة ${session.user.name} للاعتماد`,
+    link: `/purchase-orders/${purchaseOrderId}`,
+    entityType: "PurchaseOrder",
+    entityId: purchaseOrderId,
+    actorId: session.user.id,
+  })
+
   await logActivity({
     userId: session.user.id,
     action: "SUBMIT",
@@ -156,6 +168,16 @@ export async function approvePO(formData: FormData) {
   if (!po || po.status !== "PENDING_APPROVAL") throw new Error("أمر شراء غير صالح")
 
   await prisma.purchaseOrder.update({ where: { id: purchaseOrderId }, data: { status: "APPROVED", approvedById: session.user.id } })
+  
+  await notifyUser(po.createdById, {
+    type: "PURCHASE_ORDER_APPROVED",
+    title: "تم اعتماد أمر الشراء",
+    message: `تم اعتماد أمر الشراء ${po.poNumber} بواسطة ${session.user.name}`,
+    link: `/purchase-orders/${purchaseOrderId}`,
+    entityType: "PurchaseOrder",
+    entityId: purchaseOrderId,
+    actorId: session.user.id,
+  })
 
   await logActivity({
     userId: session.user.id,
@@ -180,6 +202,17 @@ export async function rejectPO(formData: FormData) {
   if (!po || po.status !== "PENDING_APPROVAL") throw new Error("أمر شراء غير صالح")
 
   await prisma.purchaseOrder.update({ where: { id: purchaseOrderId }, data: { status: "REJECTED", approvedById: session.user.id } })
+
+    // ✅ Notify the creator that their PO was rejected
+  await notifyUser(po.createdById, {
+    type: "PURCHASE_ORDER_REJECTED",
+    title: "تم رفض أمر الشراء",
+    message: `تم رفض أمر الشراء ${po.poNumber} بواسطة ${session.user.name}`,
+    link: `/purchase-orders/${purchaseOrderId}`,
+    entityType: "PurchaseOrder",
+    entityId: purchaseOrderId,
+    actorId: session.user.id,
+  })
 
   await logActivity({
     userId: session.user.id,
@@ -216,8 +249,8 @@ export async function confirmPurchaseOrder(formData: FormData) {
     })
 
     for (const item of po.items) {
-      // ✅ Only update stock if it's a catalog product (productId is not null)
       if (item.productId) {
+        // Catalog product → update main stock
         await tx.stockMovement.create({
           data: {
             productId: item.productId, 
@@ -232,6 +265,45 @@ export async function confirmPurchaseOrder(formData: FormData) {
           where: { id: item.productId }, 
           data: { currentStock: { increment: item.quantity } }
         })
+      } else {
+        // ✅ Custom item → add to warehouse
+        const existingItem = await tx.warehouseCustomItem.findFirst({
+          where: { name: item.productName || "", unit: item.unit || "" }
+        })
+        
+        if (existingItem) {
+          await tx.warehouseCustomItem.update({
+            where: { id: existingItem.id },
+            data: { quantity: { increment: item.quantity } }
+          })
+          await tx.warehouseCustomItemMovement.create({
+            data: {
+              warehouseCustomItemId: existingItem.id,
+              type: "IN",
+              quantity: item.quantity,
+              reason: `استلام عبر أمر الشراء ${po.poNumber}`,
+              userId: session.user.id
+            }
+          })
+        } else {
+          const newItem = await tx.warehouseCustomItem.create({
+            data: {
+              name: item.productName || "بند مخصص",
+              unit: item.unit || "pcs",
+              quantity: item.quantity,
+              notes: `مستلم من أمر الشراء ${po.poNumber}`
+            }
+          })
+          await tx.warehouseCustomItemMovement.create({
+            data: {
+              warehouseCustomItemId: newItem.id,
+              type: "IN",
+              quantity: item.quantity,
+              reason: `استلام أولي عبر أمر الشراء ${po.poNumber}`,
+              userId: session.user.id
+            }
+          })
+        }
       }
     }
   })
@@ -248,5 +320,6 @@ export async function confirmPurchaseOrder(formData: FormData) {
   revalidatePath(`/purchase-orders/${purchaseOrderId}`)
   revalidatePath("/purchase-orders")
   revalidatePath("/products")
+  revalidatePath("/warehouse")
   redirect(`/purchase-orders/${purchaseOrderId}`)
 }

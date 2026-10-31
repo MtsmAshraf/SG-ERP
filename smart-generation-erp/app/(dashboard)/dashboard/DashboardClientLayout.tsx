@@ -11,15 +11,18 @@ import {
   ScrollText,
   HandCoins,
   UserCheck,
-  FileTextIcon
+  FileTextIcon,
+  WarehouseIcon,
+  Bell,
+  Wrench
 } from "lucide-react"
 import Link from "next/link"
 import { TopHeader } from "../components/TopHeader"
+import { NotificationsDropdown } from "@/components/NotificationsDropdown" // ✅ Added import
 
 interface DashboardClientLayoutProps {
   userName: string
   permissions: any
-  // ✅ Make companyData optional and provide a default structure
   companyData?: {
     name: string
     logo: string | null
@@ -28,7 +31,6 @@ interface DashboardClientLayoutProps {
   children: React.ReactNode
 }
 
-// ✅ Add default values directly in the function signature
 export default function DashboardClientLayout({ 
   userName, 
   permissions, 
@@ -44,18 +46,19 @@ export default function DashboardClientLayout({
 
   const navItems = [
     { href: "/dashboard", icon: LayoutDashboard, label: "لوحة التحكم", perm: permissions?.canViewDashboard },
+    { href: "/notifications", icon: Bell, label: "الإشعارات", perm: true }, // ✅ Notifications in sidebar
     { href: "/reports", icon: BarChart3, label: "تحليل البيانات", perm: permissions?.canViewReports },
     { href: "/products", icon: Package, label: "المنتجات", perm: permissions?.canViewProducts },
     { href: "/customers", icon: Users, label: "العملاء", perm: permissions?.canViewCustomers },
     { href: "/suppliers", icon: Truck, label: "الموردين", perm: permissions?.canViewSuppliers },
     { href: "/purchase-orders", icon: ShoppingCart, label: "أوامر الشراء", perm: permissions?.canViewPurchaseOrders },
-    { 
-      href: "/purchase-orders/items", icon: Package, label: "جميع بنود المشتريات", perm: permissions?.canViewPurchaseOrders 
-    },
+    { href: "/purchase-orders/items", icon: Package, label: "جميع بنود المشتريات", perm: permissions?.canViewPurchaseOrders },
     { href: "/price-offers", icon: FileText, label: "عروض الأسعار", perm: permissions?.canViewPriceOffers },
     { href: "/sales-orders", icon: FileText, label: "أوامر البيع", perm: permissions?.canViewSalesOrders },
     { href: "/deposits", icon: HandCoins, label: "الأمانات", perm: permissions?.canViewDeposits },
     { href: "/custodies", icon: UserCheck, label: "العهد", perm: permissions?.canViewCustodies },
+    { href: "/maintenance", icon: Wrench, label: "الصيانة", perm: permissions?.canViewMaintenance },
+    { href: "/warehouse", icon: WarehouseIcon, label: "المخزن", perm: permissions?.canViewWarehouse },
     { href: "/invoices", icon: FileTextIcon, label: "الفواتير", perm: true },
     { href: "/hr", icon: Briefcase, label: "الموارد البشرية", perm: permissions?.canViewHR },
     { href: "/users", icon: UserCog, label: "إدارة المستخدمين", perm: permissions?.canViewUsers },
@@ -68,12 +71,16 @@ export default function DashboardClientLayout({
       {/* Mobile Header */}
       <div className="fixed top-0 right-0 left-0 z-40 flex h-16 items-center justify-between border-b bg-white px-4 md:hidden">
         <span className="text-lg font-bold text-[#061228] truncate">{companyData.name}</span>
-        <button 
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="rounded p-2 text-gray-600 hover:bg-gray-100"
-        >
-          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
+        <div className="flex items-center gap-1">
+          {/* ✅ Notifications Dropdown for Mobile */}
+          <NotificationsDropdown />
+          <button 
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="rounded p-2 text-gray-600 hover:bg-gray-100"
+          >
+            {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile Sidebar Overlay */}
@@ -146,18 +153,24 @@ export default function DashboardClientLayout({
 
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col pt-16 md:pt-0 min-w-0">
+        {/* Desktop Header */}
         <header className="hidden h-16 items-center justify-between border-b bg-white px-6 md:flex">
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold text-[#061228]">مرحباً، {userName}</h2>
             <span className="text-sm text-gray-400">|</span>
             <span className="text-sm font-medium text-[#dda322]">العملة: {companyData.currency}</span>
           </div>
-          <form action={async () => { await signOut({ redirectTo: "/login" }) }}>
-            <button className="flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-red-50 hover:text-red-600">
-              <LogOut size={16} />
-              تسجيل الخروج
-            </button>
-          </form>
+          
+          {/* ✅ Notifications + Sign Out grouped together */}
+          <div className="flex items-center gap-3">
+            <NotificationsDropdown />
+            <form action={async () => { await signOut({ redirectTo: "/login" }) }}>
+              <button className="flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-red-50 hover:text-red-600">
+                <LogOut size={16} />
+                تسجيل الخروج
+              </button>
+            </form>
+          </div>
         </header>
 
         {/* Page Content */}

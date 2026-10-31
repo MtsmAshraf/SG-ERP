@@ -2,33 +2,71 @@ import { prisma } from "@/lib/prisma"
 import { requirePermission, getUserPermissions } from "@/lib/auth-utils"
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { ArrowRight, Package, Warehouse, Users, Briefcase, Hash, Zap, Activity, Pencil, History, ArrowUpCircle, ArrowDownCircle, RefreshCw } from "lucide-react"
+import { 
+  ArrowRight, Package, Warehouse, Users, Briefcase, Hash, 
+  Zap, Activity, Pencil, History, ArrowUpCircle, ArrowDownCircle, 
+  RefreshCw, Barcode, 
+  Wrench,
+  Clock,
+  AlertCircle,
+  CheckCircle,
+  XCircle
+} from "lucide-react"
+import { AddSerialNumbersModal } from "../AddSerialNumbersModal" 
+import { SerialNumbersTable } from "../SerialNumbersTable"
 
-export default async function ProductDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ProductDetailsPage({ 
+  params 
+}: { 
+  params: Promise<{ id: string }> 
+}) {
   await requirePermission("canViewProducts")
   const permissions = await getUserPermissions()
   const { id } = await params
 
-    const product = await prisma.product.findUnique({
+  const product = await prisma.product.findUnique({
     where: { id },
     include: {
       depositItems: { include: { deposit: true } }, 
       custodyItems: { include: { custody: { include: { employee: true } } } },
+       maintenanceItems: { 
+        where: { 
+          status: { notIn: ["RETURNED", "SCRAPPED"] } 
+        },
+        include: { 
+          maintenance: { 
+            select: { 
+              id: true, 
+              maintenanceNumber: true, 
+              status: true, 
+              customer: { select: { name: true } } 
+            } 
+          }
+        }
+      },
       stockMovements: { 
-        orderBy: { createdAt: "desc" }, 
-        take: 50,
-        // ✅ Removed the 'user' include to match your current schema
+        orderBy: { createdAt: "desc" },
+        take: 100, 
+        include: {
+          user: { select: { name: true } } 
+        }
+      },
+      
+      serialNumbers: {
+        where: { status: "IN_STOCK" },
+        orderBy: { addedAt: "desc" },
       }
     }
   })
 
   if (!product) notFound()
 
-  // ✅ Calculate Stock Totals
+  
   const warehouseStock = product.currentStock
   const depositStock = product.depositItems.reduce((sum: number, item: any) => sum + item.quantity, 0)
-  const custodyStock = product.custodyItems.reduce((sum: number, item: any) => sum + item.quantity, 0)
-  const totalStock = warehouseStock + depositStock + custodyStock
+  const custodyStock = product.custodyItems.reduce((sum: number, item: any) => sum + item.quantity, 0)  
+  const maintenanceStock = product.maintenanceItems.reduce((sum: number, item: any) => sum + item.quantity, 0)
+  const totalStock = warehouseStock + depositStock + custodyStock + maintenanceStock
 
   // Helper to safely display Decimal/Number fields
   const displayValue = (val: any) => val ? (typeof val.toNumber === 'function' ? val.toNumber() : val) : null
@@ -47,6 +85,26 @@ export default async function ProductDetailsPage({ params }: { params: Promise<{
     }
   }
 
+  
+    const getStatusBadge = (status: string) => {
+      const badges: Record<string, { label: string; className: string; icon: any }> = {
+        RECEIVED: { label: "تم الاستلام", className: "bg-blue-100 text-blue-800", icon: Clock },
+        UNDER_REPAIR: { label: "قيد الإصلاح", className: "bg-yellow-100 text-yellow-800", icon: Wrench },
+        WAITING_PARTS: { label: "بانتظار قطع الغيار", className: "bg-orange-100 text-orange-800", icon: AlertCircle },
+        COMPLETED: { label: "مكتمل", className: "bg-green-100 text-green-800", icon: CheckCircle },
+        RETURNED: { label: "تم الإرجاع", className: "bg-gray-100 text-gray-800", icon: CheckCircle },
+        SCRAPPED: { label: "تم الإتلاف", className: "bg-red-100 text-red-800", icon: XCircle }
+      }
+      const badge = badges[status] || badges.RECEIVED
+      const Icon = badge.icon
+      return (
+        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${badge.className}`}>
+          <Icon size={12} />
+          {badge.label}
+        </span>
+      )
+    }
+
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       {/* Header */}
@@ -58,14 +116,21 @@ export default async function ProductDetailsPage({ params }: { params: Promise<{
           <h1 className="text-2xl font-bold text-[#061228]">تفاصيل المنتج</h1>
         </div>
 
-        {permissions?.canEditProducts && (
-          <Link 
-            href={`/products/${product.id}/edit`} 
-            className="inline-flex items-center gap-2 rounded-lg bg-[#dda322] px-4 py-2 text-sm font-medium text-white hover:bg-[#b8861b] transition shadow-sm"
-          >
-            <Pencil size={16} /> تعديل المنتج
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          {/* ✅ NEW: Add Serial Numbers Button */}
+          {permissions?.canAdjustStock && (
+            <AddSerialNumbersModal productId={product.id} />
+          )}
+          
+          {permissions?.canEditProducts && (
+            <Link 
+              href={`/products/${product.id}/edit`} 
+              className="inline-flex items-center gap-2 rounded-lg bg-[#dda322] px-4 py-2 text-sm font-medium text-white hover:bg-[#b8861b] transition shadow-sm"
+            >
+              <Pencil size={16} /> تعديل المنتج
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Main Info Card */}
@@ -111,7 +176,7 @@ export default async function ProductDetailsPage({ params }: { params: Promise<{
       </div>
 
       {/* Stock Overview Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="rounded-lg border bg-white p-4 shadow-sm">
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
             <Warehouse size={16} className="text-blue-600" />
@@ -134,6 +199,14 @@ export default async function ProductDetailsPage({ params }: { params: Promise<{
             <span>العهدة</span>
           </div>
           <p className="text-2xl font-bold text-[#061228]">{custodyStock}</p>
+        </div>
+
+         <div className="rounded-lg border bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+            <Wrench size={16} className="text-red-600" />
+            <span>الصيانة</span>
+          </div>
+          <p className="text-2xl font-bold text-[#061228]">{maintenanceStock}</p>
         </div>
 
         <div className="rounded-lg border-2 border-[#dda322] bg-[#dda322]/5 p-4 shadow-sm">
@@ -161,14 +234,15 @@ export default async function ProductDetailsPage({ params }: { params: Promise<{
               <table className="min-w-full divide-y divide-gray-200 text-sm">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">اسم الوديعة</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">اسم المستلم / الوديعة</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">الكمية</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {product.depositItems.map((item: any) => (
                     <tr key={item.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-900 font-medium">{item.deposit?.name || "غير محدد"}</td>
+                      {/* ✅ FIXED: Use recipientName instead of name to match schema */}
+                      <td className="px-4 py-3 text-gray-900 font-medium">{item.deposit?.recipientName || "غير محدد"}</td>
                       <td className="px-4 py-3 text-gray-900">{item.quantity}</td>
                     </tr>
                   ))}
@@ -212,15 +286,66 @@ export default async function ProductDetailsPage({ params }: { params: Promise<{
         </div>
       </div>
 
-      {/* ✅ RESTORED: Stock Movement History Table */}
-      <div className="rounded-lg border bg-white shadow-sm overflow-hidden">
+            {/* Maintenance Items Table */}
+      {product.maintenanceItems.length > 0 && (
+        <div className="rounded-lg border bg-white shadow-sm overflow-hidden">
+          <div className="border-b bg-gray-50 px-4 py-3">
+            <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+              <Wrench size={16} className="text-red-600" /> قيد الصيانة حالياً
+            </h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">رقم الصيانة</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">العميل</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">الرقم التسلسلي</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">الحالة</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {product.maintenanceItems.map((item: any) => (
+                  <tr key={item.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <Link href={`/maintenance/${item.maintenance.id}`} className="font-mono text-[#dda322] hover:underline">
+                        {item.maintenance.maintenanceNumber}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-gray-900">{item.maintenance.customer?.name || "—"}</td>
+                    <td className="px-4 py-3 font-mono text-gray-900">
+                      {item.serialNumber?.serialNumber || "—"}
+                    </td>
+                    <td className="px-4 py-3">{getStatusBadge(item.status)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <SerialNumbersTable serialNumbers={product.serialNumbers} />
+
+
+      {/* Stock Movement History Table */}
+       <div className="rounded-lg border bg-white shadow-sm overflow-hidden">
         <div className="border-b bg-gray-50 px-6 py-4 flex items-center justify-between">
           <h2 className="text-lg font-bold text-[#061228] flex items-center gap-2">
             <History size={20} className="text-[#dda322]" /> سجل حركات المخزون
           </h2>
-          <span className="text-xs text-gray-500">آخر 50 حركة</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500">آخر 100 حركة</span>
+            {/* ✅ NEW: View All Button */}
+            <Link 
+              href={`/products/${product.id}/movements`}
+              className="inline-flex items-center gap-1 text-sm font-medium text-[#dda322] hover:text-[#b8861b] transition"
+            >
+              عرض الكل
+              <ArrowRight size={14} />
+            </Link>
+          </div>
         </div>
-
         {product.stockMovements.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500">لا توجد حركات مخزون مسجلة لهذا المنتج.</div>
         ) : (
@@ -251,7 +376,7 @@ export default async function ProductDetailsPage({ params }: { params: Promise<{
                       {movement.reason || "—"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
-                      النظام {/* Default fallback since 'user' relation is missing */}
+                      {movement.user?.name || "النظام"}
                     </td>
                   </tr>
                 ))}

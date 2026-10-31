@@ -7,6 +7,7 @@ import { redirect } from "next/navigation"
 import { auth } from "@/auth"
 import { logActivity } from "@/lib/activity-log"
 import { getUsdToEgpRate } from "@/lib/usd-rate"
+import { notifyUser, notifyUsersWithPermission } from "@/lib/notifications"
 
 export async function createPriceOffer(formData: FormData) {
   try {
@@ -116,6 +117,9 @@ export async function removeOfferItem(formData: FormData) {
 export async function submitOfferForApproval(formData: FormData) {
   await requirePermission("canCreatePriceOffers")
   const priceOfferId = formData.get("priceOfferId") as string
+  
+  const session = await auth()
+  if (!session) throw new Error("غير مصرح لك بالوصول")
 
   const offer = await prisma.priceOffer.findUnique({ where: { id: priceOfferId } })
   if (!offer || offer.status !== "DRAFT") throw new Error("عرض سعر غير صالح")
@@ -125,6 +129,15 @@ export async function submitOfferForApproval(formData: FormData) {
     where: { id: priceOfferId },
     data: { status: "PENDING_APPROVAL" }
   })
+  await notifyUsersWithPermission("canApprovePriceOffers", {
+      type: "PRICE_OFFER_SUBMITTED",
+      title: "عرض سعر جديد بانتظار الاعتماد",
+      message: `تم إرسال عرض السعر ${offer.offerNumber} بواسطة ${session.user.name} للاعتماد`,
+      link: `/price-offers/${offer.id}`, // ✅ FIXED: use offer.id
+      entityType: "PriceOffer",
+      entityId: offer.id,                 // ✅ FIXED: use offer.id
+      actorId: session.user.id,
+    })
 
   revalidatePath(`/price-offers/${priceOfferId}`)
   revalidatePath("/price-offers")
@@ -172,6 +185,16 @@ export async function approveOffer(formData: FormData) {
     data: { status: "APPROVED", approvedById: session.user.id }
   })
 
+  await notifyUser(offer.createdById, {
+      type: "PRICE_OFFER_APPROVED",
+      title: "تم اعتماد عرض السعر",
+      message: `تم اعتماد عرض السعر ${offer.offerNumber} بواسطة ${session.user.name}`,
+      link: `/price-offers/${offer.id}`,
+      entityType: "PriceOffer",
+      entityId: offer.id,
+      actorId: session.user.id,
+    })
+
   await logActivity({
     userId: session.user.id,
     action: "APPROVE",
@@ -198,6 +221,16 @@ export async function rejectOffer(formData: FormData) {
     where: { id: priceOfferId },
     data: { status: "REJECTED", approvedById: session.user.id }
   })
+
+    await notifyUser(offer.createdById, {
+      type: "PRICE_OFFER_REJECTED",
+      title: "تم رفض عرض السعر",
+      message: `تم رفض عرض السعر ${offer.offerNumber} بواسطة ${session.user.name}`,
+      link: `/price-offers/${offer.id}`,
+      entityType: "PriceOffer",
+      entityId: offer.id,
+      actorId: session.user.id,
+    })
 
   await logActivity({
     userId: session.user.id,

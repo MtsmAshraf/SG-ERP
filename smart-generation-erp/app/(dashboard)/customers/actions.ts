@@ -30,9 +30,19 @@ export async function createCustomer(prevState: any, formData: FormData) {
       if (contactName.trim()) contacts.push({ name: contactName, jobTitle: contactTitle, phone: contactPhone })
       index++
     }
-
+    
     const customer = await prisma.customer.create({
-      data: { name, email, phone, address, area, fieldOfWork, defaultPercentage, contacts: { create: contacts } }
+      data: { 
+        name, 
+        email, 
+        phone, 
+        address, 
+        area, 
+        fieldOfWork, 
+        defaultPercentage, 
+        createdById: session.user.id, 
+        contacts: { create: contacts } 
+      }
     })
 
     await logActivity({

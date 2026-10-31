@@ -50,3 +50,6 @@ html {
     display: none !important;
   }
 }
+table *{
+  text-align: left !important;
+}

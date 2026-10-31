@@ -17,7 +17,9 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       contacts: { orderBy: { createdAt: "asc" } },
       salesOrders: { orderBy: { createdAt: "desc" }, take: 5 },
       priceOffers: { orderBy: { createdAt: "desc" }, take: 5 },
-      invoices: { orderBy: { createdAt: "desc" } } // ✅ Fetch invoices
+      invoices: { orderBy: { createdAt: "desc" } },
+      createdBy: { select: { id: true, name: true } } 
+
     }
   })
 
@@ -61,6 +63,24 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
             )}
             {permissions?.canDeleteCustomers && <DeleteCustomerButton customerId={customer.id} customerName={customer.name} />}
           </div>
+        )}
+      </div>
+
+      <div>
+        {customer.createdBy && (
+          <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+            تمت الإضافة بواسطة: <span className="font-medium text-gray-700">{customer.createdBy.name}</span>
+          </p>
+        )}
+        {customer.createdBy === null && (
+          <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+            تمت الإضافة بواسطة: <span className="font-medium text-gray-700">System</span>
+          </p>
+        )}
+        {customer.fieldOfWork && (
+          <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
+            <Briefcase size={14} /> {customer.fieldOfWork}
+          </p>
         )}
       </div>
 

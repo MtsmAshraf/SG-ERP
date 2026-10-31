@@ -3,7 +3,7 @@
 import { useActionState } from "react"
 import { addPOItem } from "./actions"
 
-export function AddPOItemForm({ purchaseOrderId }: { purchaseOrderId: string }) {
+export function AddPOItemForm({ purchaseOrderId }: { purchaseOrderId: string}) {
   const [state, formAction, isPending] = useActionState(addPOItem, { error: null } as { error: string | null } | null)
 
   return (

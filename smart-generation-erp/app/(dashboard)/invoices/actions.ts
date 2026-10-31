@@ -5,6 +5,8 @@ import { requirePermission } from "@/lib/auth-utils"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { logActivity } from "@/lib/activity-log"
+import { notifyUsersWithPermission } from "@/lib/notifications"
+import { auth } from "@/auth"
 
 export async function generateInvoice(formData: FormData) {
   const session = await requirePermission("canCreateSalesOrders")
@@ -65,26 +67,51 @@ export async function generateInvoice(formData: FormData) {
 }
 
 export async function markInvoiceAsPaid(formData: FormData) {
-  const session = await requirePermission("canCreateSalesOrders")
+  const session = await auth()
+  if (!session) throw new Error("غير مصرح")
+  await requirePermission("canManageInvoices")
+
   const invoiceId = formData.get("invoiceId") as string
 
-  const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } })
+  // 1. Fetch the invoice
+  const invoice = await prisma.invoice.findUnique({ 
+    where: { id: invoiceId } 
+  })
 
+  // ✅ FIXED: Add null check before using the invoice object
+  if (!invoice) {
+    throw new Error("الفاتورة غير موجودة")
+  }
+
+  // 2. Update the invoice
   await prisma.invoice.update({
     where: { id: invoiceId },
     data: { 
-      status: "PAID",
-      paidAt: new Date()
+      status: "PAID", 
+      paidAt: new Date() 
     }
+  })
+
+  // 3. Notify users (Now TypeScript knows 'invoice' is not null)
+  await notifyUsersWithPermission("canManageInvoices", {
+    type: "INVOICE_PAID",
+    title: "تم دفع الفاتورة",
+    message: `تم تسجيل دفع الفاتورة رقم ${invoice.invoiceNumber} بنجاح`,
+    link: `/invoices/${invoice.id}/print`,
+    entityType: "Invoice",
+    entityId: invoice.id,
+    actorId: session.user.id,
   })
 
   await logActivity({
     userId: session.user.id,
-    action: "PAY",
+    action: "UPDATE",
     entityType: "Invoice",
-    entityId: invoiceId,
-    entityName: invoice?.invoiceNumber || "فاتورة",
+    entityId: invoice.id,
+    entityName: invoice.invoiceNumber,
+    details: "تم تسجيل دفع الفاتورة",
   })
 
   revalidatePath("/invoices")
+  revalidatePath(`/invoices/${invoiceId}`)
 }

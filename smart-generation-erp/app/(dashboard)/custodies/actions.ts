@@ -7,6 +7,7 @@ import { redirect } from "next/navigation"
 import { logActivity } from "@/lib/activity-log"
 import { getUsdToEgpRate } from "@/lib/usd-rate"
 import { auth } from "@/auth"
+import { notifyUsersWithPermission } from "@/lib/notifications"
 
 export async function createCustody(prevState: any, formData: FormData) {
   try {
@@ -18,13 +19,11 @@ export async function createCustody(prevState: any, formData: FormData) {
     const productId = formData.get("productId") as string
     const quantity = parseInt(formData.get("quantity") as string)
     const notes = (formData.get("notes") as string) || undefined
-    const expectedReturnDate = formData.get("expectedReturnDate") as string
 
     if (!quantity || quantity <= 0) {
       return { error: "يجب أن تكون الكمية أكبر من 0" }
     }
 
-    // ✅ Check stock BEFORE creating custody
     const product = await prisma.product.findUnique({ where: { id: productId } })
     if (!product) {
       return { error: "المنتج غير موجود" }
@@ -36,37 +35,64 @@ export async function createCustody(prevState: any, formData: FormData) {
       }
     }
 
+    // ✅ Fetch employee details BEFORE creating custody
+    const employee = await prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { firstName: true, lastName: true }
+    })
+
+    if (!employee) {
+      return { error: "الموظف غير موجود" }
+    }
+
+    const employeeName = `${employee.firstName} ${employee.lastName}`
+
     const custody = await prisma.$transaction(async (tx) => {
-      // Create custody record
       const newCustody = await tx.custody.create({
         data: {
           employeeId,
-          productId,
-          quantity,
           notes,
-          expectedReturnDate: expectedReturnDate ? new Date(expectedReturnDate) : null,
-          status: "ACTIVE"
+          status: "ACTIVE",
+          items: {
+            create: {
+              productId,
+              quantity,
+              status: "BORROWED"
+            }
+          }
+        },
+        include: {
+          items: true
         }
       })
 
-      // Deduct from main warehouse
       await tx.product.update({
         where: { id: productId },
         data: { currentStock: { decrement: quantity } }
       })
 
-      // Create stock movement
       await tx.stockMovement.create({
         data: {
           productId,
           type: "STOCK_OUT",
           quantity,
-          reason: `عهدة للموظف - ${newCustody.id}`,
+          // ✅ FIXED: Use employee name instead of custody ID
+          reason: `عهدة للموظف ${employeeName}`,
           userId: session.user.id
         }
       })
 
       return newCustody
+    })
+
+    await notifyUsersWithPermission("canViewCustodies", {
+      type: "CUSTODY_OUT",
+      title: "عهدة جديدة",
+      message: `تم تسليم ${quantity} من ${product.name} كعهدة للموظف ${employeeName}`,
+      link: "/custodies",
+      entityType: "Custody",
+      entityId: custody.id,
+      actorId: session.user.id,
     })
 
     await logActivity({
@@ -75,7 +101,7 @@ export async function createCustody(prevState: any, formData: FormData) {
       entityType: "Custody",
       entityId: custody.id,
       entityName: `عهدة ${product.name}`,
-      details: `تم إنشاء عهدة بمقدار ${quantity} للموظف`,
+      details: `تم إنشاء عهدة بمقدار ${quantity} للموظف ${employeeName}`,
     })
 
   } catch (error: any) {
@@ -89,23 +115,23 @@ export async function createCustody(prevState: any, formData: FormData) {
 }
 
 export async function sellCustodyItem(formData: FormData) {
-  const session = await requirePermission("canManageCustodies")
+  const authSession = await auth()
+  if (!authSession) throw new Error("غير مصرح")
+  await requirePermission("canManageCustodies")
+  
   const itemId = formData.get("itemId") as string
 
-  const [item, usdRate] = await Promise.all([
-    prisma.custodyItem.findUnique({ 
-      where: { id: itemId }, 
-      include: { 
-        product: true, 
-        custody: { include: { employee: true } } 
-      } 
-    }),
-    getUsdToEgpRate()
-  ])
+  const item = await prisma.custodyItem.findUnique({ 
+    where: { id: itemId }, 
+    include: { 
+      product: true, 
+      custody: { include: { employee: true } } 
+    } 
+  })
 
   if (!item || item.status !== "BORROWED") throw new Error("عنصر غير صالح للبيع")
 
-  // ✅ استخدم سعر البيع USD × سعر الصرف
+  const usdRate = await getUsdToEgpRate()
   const currentSellPriceUSD = item.product.sellPriceUSD.toNumber()
   const totalValueEGP = currentSellPriceUSD * usdRate * item.quantity
 
@@ -115,16 +141,30 @@ export async function sellCustodyItem(formData: FormData) {
       data: { 
         status: "SOLD", 
         soldDate: new Date(), 
-        soldCostPrice: currentSellPriceUSD  // ✅ مخزن بـ USD
+        soldCostPrice: currentSellPriceUSD
       }
     })
   })
 
+  const employeeName = `${item.custody.employee.firstName} ${item.custody.employee.lastName}`
+
+  // ✅ FIXED: Used correct variable names (item instead of custodyItem)
+  await notifyUsersWithPermission("canViewCustodies", {
+    type: "CUSTODY_SOLD",
+    title: "تم بيع بند من العهدة",
+    message: `تم بيع ${item.quantity} ${item.product.unit} من ${item.product.name} من عهدة ${employeeName}`,
+    link: "/custodies",
+    entityType: "Custody",
+    entityId: item.id,
+    actorId: authSession.user.id,
+  })
+
   await logActivity({
-    userId: session.user.id,
+    userId: authSession.user.id,
     action: "SELL",
     entityType: "Custody",
-    entityName: `${item.custody.employee.firstName} ${item.custody.employee.lastName}`,
+    entityId: item.id,
+    entityName: employeeName,
     details: `بيع ${item.quantity} ${item.product.unit} من ${item.product.name}. القيمة المحتسبة: ${totalValueEGP.toFixed(2)} EGP`,
   })
 
@@ -132,7 +172,10 @@ export async function sellCustodyItem(formData: FormData) {
 }
 
 export async function returnCustodyItem(formData: FormData) {
-  const session = await requirePermission("canManageCustodies")
+  const authSession = await auth()
+  if (!authSession) throw new Error("غير مصرح")
+  await requirePermission("canManageCustodies")
+  
   const itemId = formData.get("itemId") as string
 
   const item = await prisma.custodyItem.findUnique({ 
@@ -143,6 +186,8 @@ export async function returnCustodyItem(formData: FormData) {
     } 
   })
   if (!item || item.status !== "BORROWED") throw new Error("عنصر غير صالح للإرجاع")
+
+  const employeeName = `${item.custody.employee.firstName} ${item.custody.employee.lastName}`
 
   await prisma.$transaction(async (tx) => {
     await tx.custodyItem.update({
@@ -160,16 +205,29 @@ export async function returnCustodyItem(formData: FormData) {
         productId: item.productId,
         type: "STOCK_IN",
         quantity: item.quantity,
-        reason: `مردود من عهدة: ${item.custody.employee.firstName} ${item.custody.employee.lastName}`
+        reason: `مردود من عهدة: ${employeeName}`,
+        userId: authSession.user.id
       }
     })
   })
 
+  // ✅ FIXED: Used correct variable names (item instead of custodyItem)
+  await notifyUsersWithPermission("canViewCustodies", {
+    type: "CUSTODY_RETURNED",
+    title: "تم إرجاع عهدة",
+    message: `تم إرجاع ${item.quantity} ${item.product.unit} من ${item.product.name} من عهدة ${employeeName} إلى المخزن الرئيسي`,
+    link: "/warehouse?view=custodies",
+    entityType: "Custody",
+    entityId: item.id,
+    actorId: authSession.user.id,
+  })
+
   await logActivity({
-    userId: session.user.id,
+    userId: authSession.user.id,
     action: "RETURN",
     entityType: "Custody",
-    entityName: `${item.custody.employee.firstName} ${item.custody.employee.lastName}`,
+    entityId: item.id,
+    entityName: employeeName,
     details: `إرجاع ${item.quantity} ${item.product.unit} من منتج: ${item.product.name} إلى المخزن`,
   })
 

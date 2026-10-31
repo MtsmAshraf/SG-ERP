@@ -275,3 +275,104 @@ export async function deleteProduct(formData: FormData) {
 
   revalidatePath("/products")
 }
+
+
+function generateSNRange(fromSN: string, toSN: string): string[] {
+  const start = parseInt(fromSN, 10)
+  const end = parseInt(toSN, 10)
+  
+  if (isNaN(start) || isNaN(end)) {
+    throw new Error("يجب أن تكون الأرقام التسلسلية أرقاماً صحيحة (مثل: 98743511)")
+  }
+  if (start > end) {
+    throw new Error("رقم البداية يجب أن يكون أصغر من أو يساوي رقم النهاية")
+  }
+  
+  const snLength = fromSN.length // Preserve leading zeros (e.g., "001" to "010")
+  const sns: string[] = []
+  
+  for (let i = start; i <= end; i++) {
+    sns.push(i.toString().padStart(snLength, '0'))
+  }
+  
+  return sns
+}
+
+export async function addSerialNumbers(prevState: any, formData: FormData) {
+  const session = await auth()
+  if (!session) return { error: "غير مصرح" }
+  await requirePermission("canAdjustStock") // Or canEditProducts
+
+  const productId = formData.get("productId") as string
+  const fromSN = (formData.get("fromSN") as string).trim()
+  const toSN = (formData.get("toSN") as string).trim()
+
+  if (!fromSN || !toSN) return { error: "يجب إدخال رقم البداية والنهاية" }
+
+  try {
+    // 1. Generate the list of SNs
+    const snsToAdd = generateSNRange(fromSN, toSN)
+    const quantityToAdd = snsToAdd.length
+
+    if (quantityToAdd > 1000) {
+      return { error: "الحد الأقصى للإضافة في مرة واحدة هو 1000 رقم تسلسلي" }
+    }
+
+    // 2. Check for duplicates in the database
+    const existingSNs = await prisma.serialNumber.findMany({
+      where: { serialNumber: { in: snsToAdd } },
+      select: { serialNumber: true }
+    })
+
+    if (existingSNs.length > 0) {
+      const duplicates = existingSNs.map(s => s.serialNumber).join(", ")
+      return { error: `الأرقام التسلسلية التالية موجودة مسبقاً: ${duplicates}` }
+    }
+
+    // 3. Add to database in a transaction
+    await prisma.$transaction(async (tx) => {
+      // Create all serial numbers
+      await tx.serialNumber.createMany({
+        data: snsToAdd.map(sn => ({
+          productId,
+          serialNumber: sn,
+          status: "IN_STOCK",
+          addedAt: new Date()
+        }))
+      })
+
+      // Update main product stock count
+      await tx.product.update({
+        where: { id: productId },
+        data: { currentStock: { increment: quantityToAdd } }
+      })
+
+      // Log stock movement
+      await tx.stockMovement.create({
+        data: {
+          productId,
+          type: "STOCK_IN",
+          quantity: quantityToAdd,
+          reason: `إضافة أرقام تسلسلية من ${fromSN} إلى ${toSN}`,
+          userId: session.user.id
+        }
+      })
+    })
+
+    await logActivity({
+      userId: session.user.id,
+      action: "UPDATE",
+      entityType: "Product",
+      entityId: productId,
+      entityName: "تحديث مخزون",
+      details: `إضافة ${quantityToAdd} رقم تسلسلي (${fromSN} - ${toSN})`,
+    })
+
+  } catch (error: any) {
+    console.error("Add SN error:", error)
+    return { error: error.message || "فشل إضافة الأرقام التسلسلية" }
+  }
+
+  revalidatePath(`/products/${productId}`)
+  return { error: null, success: true }
+}

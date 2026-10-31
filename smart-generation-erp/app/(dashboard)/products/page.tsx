@@ -4,24 +4,33 @@ import { requirePermission, getUserPermissions } from "@/lib/auth-utils"
 import { Pagination } from "@/components/Pagination"
 import { PAGE_SIZE } from "@/lib/pagination"
 import Link from "next/link"
-import { Search, Eye, Pencil, Package, AlertTriangle } from "lucide-react"
+import { Search, Eye, Pencil, Package, AlertTriangle, Wrench } from "lucide-react"
 import { DeleteProductButton } from "./DeleteProductButton"
 import { getCurrencySymbol } from "@/lib/settings"
 import { getUsdToEgpRate } from "@/lib/usd-rate"
 
+// ✅ Updated to include maintenance stock calculation
 async function getStockBreakdown(productId: string) {
-  const [depositQty, custodyQty] = await Promise.all([
+  const [depositQty, custodyQty, maintenanceQty] = await Promise.all([
     prisma.depositItem.aggregate({ _sum: { quantity: true }, where: { productId, status: "BORROWED" } }),
-    prisma.custodyItem.aggregate({ _sum: { quantity: true }, where: { productId, status: "BORROWED" } })
+    prisma.custodyItem.aggregate({ _sum: { quantity: true }, where: { productId, status: "BORROWED" } }),
+    prisma.maintenanceItem.aggregate({ 
+      _sum: { quantity: true }, 
+      where: { productId, status: { notIn: ["RETURNED", "SCRAPPED"] } } 
+    })
   ])
-  return { deposit: depositQty._sum.quantity || 0, custody: custodyQty._sum.quantity || 0 }
+  return { 
+    deposit: depositQty._sum.quantity || 0, 
+    custody: custodyQty._sum.quantity || 0,
+    maintenance: maintenanceQty._sum.quantity || 0 // ✅ New
+  }
 }
 
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   await requirePermission("canViewProducts")
   const permissions = await getUserPermissions()
   const currency = await getCurrencySymbol()
-  const usdRate = await getUsdToEgpRate() // ✅ Dynamic rate from DB
+  const usdRate = await getUsdToEgpRate()
 
   const params = await searchParams
   const currentPage = Number(params.page) || 1
@@ -128,7 +137,8 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                 <tr><td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500">لا توجد منتجات مطابقة لـ "{searchQuery}".</td></tr>
               ) : (
                 productsWithBreakdown.map((product) => {
-                  const totalStock = product.currentStock + product.breakdown.deposit + product.breakdown.custody
+                  // ✅ Updated total stock calculation to include maintenance
+                  const totalStock = product.currentStock + product.breakdown.deposit + product.breakdown.custody + product.breakdown.maintenance
                   const isLowStock = totalStock <= 10
                   return (
                     <tr key={product.id} className="hover:bg-gray-50 transition">
@@ -143,13 +153,13 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{product.category || "-"}</td>
                       
-                      {/* ✅ Cost Price Column */}
+                      {/* Cost Price Column */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <div className="font-semibold text-gray-900">${product.costPriceUSD.toFixed(2)}</div>
                         <div className="text-xs text-gray-500">≈ {currency} {(product.costPriceUSD * usdRate).toFixed(2)}</div>
                       </td>
                       
-                      {/* ✅ Sell Price Column */}
+                      {/* Sell Price Column */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <div className="font-semibold text-[#dda322]">${product.sellPriceUSD.toFixed(2)}</div>
                         <div className="text-xs text-gray-500">≈ {currency} {(product.sellPriceUSD * usdRate).toFixed(2)}</div>
@@ -160,10 +170,12 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                           <span className={`font-bold ${isLowStock ? "text-red-600" : "text-gray-900"}`}>{totalStock} {product.unit}</span>
                           {isLowStock && <AlertTriangle size={14} className="text-red-500" />}
                         </div>
+                        {/* ✅ Updated breakdown display to include maintenance */}
                         <div className="mt-1 text-xs text-gray-500" dir="rtl">
                           ({product.currentStock} مخزن
                           {product.breakdown.deposit > 0 && ` + ${product.breakdown.deposit} أمانة`}
-                          {product.breakdown.custody > 0 && ` + ${product.breakdown.custody} عهدة`})
+                          {product.breakdown.custody > 0 && ` + ${product.breakdown.custody} عهدة`}
+                          {product.breakdown.maintenance > 0 && ` + ${product.breakdown.maintenance} صيانة`})
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">

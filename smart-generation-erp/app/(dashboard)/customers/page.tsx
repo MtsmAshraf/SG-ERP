@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import { Prisma } from "@prisma/client"
 import { requirePermission, getUserPermissions } from "@/lib/auth-utils"
+import { auth } from "@/auth" // ✅ Added auth import
 import { Pagination } from "@/components/Pagination"
 import { PAGE_SIZE } from "@/lib/pagination"
 import Link from "next/link"
@@ -14,12 +15,14 @@ export default async function CustomersPage({
 }) {
   await requirePermission("canViewCustomers")
   const permissions = await getUserPermissions()
+  const session = await auth() // ✅ Get current session
 
   const params = await searchParams
   const currentPage = Number(params.page) || 1
   const searchQuery = (params.search as string) || ""
 
-  const where: Prisma.CustomerWhereInput = searchQuery ? {
+  // 1. Build the search filter
+  const searchFilter: Prisma.CustomerWhereInput = searchQuery ? {
     OR: [
       { name: { contains: searchQuery, mode: Prisma.QueryMode.insensitive } },
       { email: { contains: searchQuery, mode: Prisma.QueryMode.insensitive } },
@@ -29,13 +32,27 @@ export default async function CustomersPage({
     ]
   } : {}
 
+  // 2. Apply the visibility filter
+  // If user has "canViewAllCustomers", show all. Otherwise, only show their own.
+  const canViewAll = permissions?.canViewAllCustomers
+  
+  const where: Prisma.CustomerWhereInput = canViewAll 
+    ? searchFilter 
+    : { 
+        ...searchFilter, 
+        createdById: session?.user.id // ✅ Restrict to current user's customers
+      }
+
   const [customers, totalItems] = await Promise.all([
     prisma.customer.findMany({
       where,
       orderBy: { createdAt: "desc" },
       skip: (currentPage - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
-      include: { contacts: true }
+      include: { 
+        contacts: true,
+        createdBy: { select: { id: true, name: true } }
+      }
     }),
     prisma.customer.count({ where })
   ])
@@ -76,12 +93,13 @@ export default async function CustomersPage({
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">التواصل</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">الموقع / المجال</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">النسبة</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">تمت الإضافة بواسطة</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الإجراءات</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {customers.length === 0 ? (
-                <tr><td colSpan={5} className="px-6 py-12 text-center text-sm text-gray-500">لا توجد نتائج مطابقة.</td></tr>
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500">لا توجد نتائج مطابقة.</td></tr>
               ) : (
                 customers.map((customer) => {
                   const pct = customer.defaultPercentage.toNumber()
@@ -152,6 +170,13 @@ export default async function CustomersPage({
                           <span className="text-green-600 font-medium">+{pct.toFixed(2)}%</span>
                         ) : (
                           <span className="text-red-600 font-medium">{pct.toFixed(2)}%</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        {customer.createdBy ? (
+                          <span className="font-medium">{customer.createdBy.name}</span>
+                        ) : (
+                          <span className="text-gray-400 italic">النظام</span>
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">

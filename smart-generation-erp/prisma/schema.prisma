@@ -65,6 +65,15 @@ model User {
   leavesApproved Leave[]
   activityLogs ActivityLog[]
 
+  warehouseCustomItemMovements  WarehouseCustomItemMovement[]
+  stockMovements         StockMovement[]  
+
+  customers Customer[]
+
+  createdMaintenances Maintenance[] @relation("MaintenanceCreator")
+  
+  notifications           Notification[] @relation("UserNotifications")
+  actorNotifications      Notification[] @relation("ActorNotifications")
 }
 
 model Product {
@@ -100,6 +109,11 @@ model Product {
   
   depositItems  DepositItem[]
   custodyItems  CustodyItem[]
+
+  serialNumbers SerialNumber[]
+
+  maintenanceItems MaintenanceItem[]
+
 }
 
 model Customer {
@@ -108,6 +122,9 @@ model Customer {
   email     String?
   phone     String?
   address   String?
+
+  createdById String?
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   area              String?   // City/Area
   fieldOfWork       String?   // Industry/Business type
@@ -122,6 +139,8 @@ model Customer {
   invoices    Invoice[]
   contacts          CustomerContact[] 
   salesOrders       SalesOrder[]
+
+  maintenances Maintenance[]
 
 }
 
@@ -146,6 +165,8 @@ model SalesOrder {
 
   priceOfferId   String?
   priceOffer     PriceOffer? @relation(fields: [priceOfferId], references: [id])
+
+  maintenances Maintenance[]
 }
 
 model OrderItem {
@@ -176,6 +197,10 @@ model StockMovement {
 
   relatedPurchaseOrderId String?
   purchaseOrder          PurchaseOrder? @relation(fields: [relatedPurchaseOrderId], references: [id])
+
+  
+  userId                 String?
+  user                   User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
 }
 
 model PriceOffer {
@@ -267,6 +292,7 @@ model Permission {
   canViewDashboard      Boolean @default(true)
   canViewProducts       Boolean @default(true)
   canViewCustomers      Boolean @default(true)
+  canViewAllCustomers    Boolean @default(false)
   canViewSuppliers      Boolean @default(true)
   canViewPurchaseOrders Boolean @default(true)
   canViewPriceOffers    Boolean @default(true)
@@ -337,6 +363,14 @@ model Permission {
   
   canViewInvoices    Boolean @default(false) 
   canManageInvoices  Boolean @default(false) 
+
+  canViewWarehouse    Boolean @default(false)
+  canManageWarehouse  Boolean @default(false) 
+
+  canViewAllInvoices Boolean @default(false) 
+
+  canViewMaintenance    Boolean @default(true)
+  canManageMaintenance  Boolean @default(false)
 }
 
 
@@ -589,4 +623,199 @@ model CustomerContact {
   jobTitle   String?
   phone      String?
   createdAt  DateTime @default(now())
+}
+
+
+model WarehouseCustomItem {
+  id          String   @id @default(cuid())
+  name        String
+  unit        String
+  quantity    Int      @default(0)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  movements   WarehouseCustomItemMovement[]
+  
+  @@map("warehouse_custom_items")
+}
+
+model WarehouseCustomItemMovement {
+  id                    String   @id @default(cuid())
+  warehouseCustomItemId String
+  warehouseCustomItem   WarehouseCustomItem @relation(fields: [warehouseCustomItemId], references: [id], onDelete: Cascade)
+  
+  type                  WarehouseMovementType
+  quantity              Int
+  reason                String?
+  userId                String?
+  user                  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  createdAt             DateTime @default(now())
+  
+  @@map("warehouse_custom_item_movements")
+}
+
+enum WarehouseMovementType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+
+// Add to the bottom of the file
+model Notification {
+  id         String           @id @default(cuid())
+  userId     String
+  user       User             @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  
+  type       NotificationType
+  title      String
+  message    String
+  link       String?          // URL to navigate to when clicked
+  entityType String?          // e.g., "PriceOffer", "Invoice"
+  entityId   String?          // ID of the related entity
+  
+  actorId    String?          // Who triggered this notification
+  actor      User?            @relation("ActorNotifications", fields: [actorId], references: [id], onDelete: SetNull)
+  
+  read       Boolean          @default(false)
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+  
+  @@index([userId, read])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  // Price Offers
+  PRICE_OFFER_SUBMITTED
+  PRICE_OFFER_APPROVED
+  PRICE_OFFER_REJECTED
+  
+  // Purchase Orders
+  PURCHASE_ORDER_SUBMITTED
+  PURCHASE_ORDER_APPROVED
+  PURCHASE_ORDER_REJECTED
+  
+  // Invoices
+  INVOICE_PAID
+  
+  // Leaves
+  LEAVE_REQUESTED
+  LEAVE_APPROVED
+  LEAVE_REJECTED
+  
+  // Deposits
+  DEPOSIT_OUT
+  DEPOSIT_RETURNED
+  DEPOSIT_SOLD
+  
+  // Custodies
+  CUSTODY_OUT
+  CUSTODY_RETURNED
+  CUSTODY_SOLD
+  
+  // System
+  SYSTEM
+}
+
+// Add this enum (if you don't have a global status enum already)
+enum SerialNumberStatus {
+  IN_STOCK
+  SOLD
+  DEPOSIT
+  CUSTODY
+  DEFECTIVE
+}
+
+// Add this new model
+model SerialNumber {
+  id             String              @id @default(cuid())
+  productId      String
+  product        Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  serialNumber   String              @unique // The actual SN (indexed for fast barcode scanning)
+  status         SerialNumberStatus  @default(IN_STOCK)
+  
+  addedAt        DateTime            @default(now()) // Automatically tracks when it was added
+  soldAt         DateTime?           // Tracks when it was sold
+  
+  relatedEntityId String?            // Optional: Link to SalesOrder, Deposit, or Custody ID when moved
+
+  maintenanceItems MaintenanceItem[]
+
+  
+  @@index([productId, status])
+  @@index([serialNumber]) // Crucial for fast barcode scanner lookups later
+  @@map("serial_numbers")
+}
+
+// Add these enums
+enum MaintenanceStatus {
+  RECEIVED
+  UNDER_REPAIR
+  WAITING_PARTS
+  COMPLETED
+  RETURNED
+  SCRAPPED
+}
+
+enum MaintenanceItemStatus {
+  RECEIVED
+  UNDER_REPAIR
+  WAITING_PARTS
+  COMPLETED
+  RETURNED
+  SCRAPPED
+}
+
+// Add the Maintenance model
+model Maintenance {
+  id                String            @id @default(cuid())
+  maintenanceNumber String            @unique
+  customerId        String?
+  customer          Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  salesOrderId      String?           // Link to original sale (for warranty tracking)
+  salesOrder        SalesOrder?       @relation(fields: [salesOrderId], references: [id], onDelete: SetNull)
+  
+  receivedDate      DateTime          @default(now())
+  expectedCompletionDate DateTime?
+  completedDate     DateTime?
+  returnedDate      DateTime?
+  
+  status            MaintenanceStatus @default(RECEIVED)
+  notes             String?           // Initial notes about the issue
+  repairNotes       String?           // Technician notes
+  repairCost        Decimal?          @db.Decimal(10, 2)
+  
+  createdById       String?
+  createdBy         User?             @relation("MaintenanceCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime?         @updatedAt
+  
+  items             MaintenanceItem[]
+  
+  @@map("maintenances")
+}
+
+model MaintenanceItem {
+  id                String                @id @default(cuid())
+  maintenanceId     String
+  maintenance       Maintenance           @relation(fields: [maintenanceId], references: [id], onDelete: Cascade)
+  
+  productId         String
+  product           Product               @relation(fields: [productId], references: [id])
+  
+  serialNumberId    String?               // Link to specific SN (critical for tracking)
+  serialNumber      SerialNumber?         @relation(fields: [serialNumberId], references: [id], onDelete: SetNull)
+  
+  quantity          Int                   @default(1)
+  issueDescription  String                // What's wrong with the item
+  status            MaintenanceItemStatus @default(RECEIVED)
+  resolvedDate      DateTime?
+  
+  @@map("maintenance_items")
 }
