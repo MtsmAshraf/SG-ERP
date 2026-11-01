@@ -3,7 +3,8 @@ import { requirePermission, getUserPermissions } from "@/lib/auth-utils"
 import Link from "next/link"
 import { 
   Package, Boxes, AlertTriangle, ArrowDownCircle, ArrowUpCircle, 
-  Plus, Search, Warehouse as WarehouseIcon, Users, UserCheck, Calendar
+  Plus, Search, Warehouse as WarehouseIcon, Users, UserCheck, Calendar,
+  Wrench
 } from "lucide-react"
 import { WarehouseStockForm } from "./WarehouseStockForm"
 import { AddCustomItemForm } from "./AddCustomItemForm"
@@ -24,7 +25,7 @@ export default async function WarehousePage({
   const stockFilter = params.stock as string
 
   // ✅ Fetch all data in parallel with CORRECT schema fields
-  const [allProducts, customItems, depositItems, custodyItems] = await Promise.all([
+  const [allProducts, customItems, depositItems, custodyItems, maintenanceItems] = await Promise.all([
     prisma.product.findMany({
       orderBy: { name: "asc" },
       include: {
@@ -65,6 +66,20 @@ export default async function WarehousePage({
         },
         product: { select: { id: true, name: true, sku: true, unit: true } }
       }
+    }),
+    prisma.maintenanceItem.findMany({
+      where: { status: { notIn: ["RETURNED", "SCRAPPED"] } },
+      orderBy: { maintenance: { receivedDate: "desc" } },
+      include: {
+        maintenance: { 
+          select: { 
+            maintenanceNumber: true, 
+            customer: { select: { name: true } } 
+          } 
+        },
+        product: { select: { id: true, name: true, sku: true, unit: true } },
+        serialNumber: { select: { serialNumber: true } }
+      }
     })
   ])
   // ✅ Calculate stats
@@ -72,6 +87,7 @@ export default async function WarehousePage({
   const totalCustomItems = customItems.length
   const totalDepositItems = depositItems.length
   const totalCustodyItems = custodyItems.length
+  const totalMaintenanceItems = maintenanceItems.length
 
   const lowStockCount = allProducts.filter(p => p.currentStock > 0 && p.currentStock <= 10).length +
                        customItems.filter(i => i.quantity > 0 && i.quantity <= 10).length
@@ -112,6 +128,15 @@ export default async function WarehousePage({
       employeeName.includes(searchQuery)
   })
 
+    const filteredMaintenance = maintenanceItems.filter(item => {
+    const customerName = item.maintenance.customer?.name || ""
+    return !searchQuery || 
+      item.product.name.toLowerCase().includes(searchQuery) ||
+      item.product.sku.toLowerCase().includes(searchQuery) ||
+      customerName.toLowerCase().includes(searchQuery) ||
+      item.maintenance.maintenanceNumber.toLowerCase().includes(searchQuery)
+  })
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -121,7 +146,7 @@ export default async function WarehousePage({
             <WarehouseIcon size={28} className="text-[#dda322]" />
             إدارة المخزون
           </h1>
-          <p className="mt-1 text-sm text-gray-500">تتبع المنتجات في المخزن الرئيسي والودائع والعهد.</p>
+          <p className="mt-1 text-sm text-gray-500">تتبع المنتجات في المخزن الرئيسي والأمانات والعهد.</p>
         </div>
         <div className="flex gap-2">
           <PrintWarehouseButton activeView={activeView} />
@@ -142,7 +167,7 @@ export default async function WarehousePage({
         />
         <TabButton 
           href="?view=deposits" 
-          label="الودائع" 
+          label="الأمانات" 
           count={totalDepositItems}
           icon={<Boxes size={16} />}
           active={activeView === "deposits"}
@@ -153,6 +178,13 @@ export default async function WarehousePage({
           count={totalCustodyItems}
           icon={<Users size={16} />}
           active={activeView === "custodies"}
+        />
+        <TabButton 
+          href="?view=maintenance" 
+          label="الصيانة" 
+          count={totalMaintenanceItems}
+          icon={<Wrench size={16} />}
+          active={activeView === "maintenance"}
         />
       </div>
 
@@ -192,13 +224,13 @@ export default async function WarehousePage({
       {activeView === "deposits" && (
         <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
           <StatCard 
-            title="إجمالي البنود في الودائع" 
+            title="إجمالي البنود في الأمانات" 
             value={totalDepositItems} 
             icon={<Boxes className="text-purple-600" size={20} />}
             bgColor="bg-purple-50"
           />
           <StatCard 
-            title="عدد الودائع النشطة" 
+            title="عدد الأمانات النشطة" 
             value={new Set(depositItems.map(i => i.deposit.id)).size}
             icon={<Package className="text-blue-600" size={20} />}
             bgColor="bg-blue-50"
@@ -236,6 +268,30 @@ export default async function WarehousePage({
         </div>
       )}
 
+            {/* Stats for Maintenance view */}
+      {activeView === "maintenance" && (
+        <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
+          <StatCard 
+            title="إجمالي بنود الصيانة" 
+            value={totalMaintenanceItems} 
+            icon={<Wrench className="text-red-600" size={20} />}
+            bgColor="bg-red-50"
+          />
+          <StatCard 
+            title="عدد طلبات الصيانة النشطة" 
+            value={new Set(maintenanceItems.map(i => i.maintenance.maintenanceNumber)).size}
+            icon={<Package className="text-blue-600" size={20} />}
+            bgColor="bg-blue-50"
+          />
+          <StatCard 
+            title="إجمالي الكميات" 
+            value={maintenanceItems.reduce((sum, i) => sum + i.quantity, 0)}
+            icon={<ArrowDownCircle className="text-green-600" size={20} />}
+            bgColor="bg-green-50"
+          />
+        </div>
+      )}
+
       {/* Search & Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <form className="relative flex-1 max-w-md">
@@ -246,9 +302,10 @@ export default async function WarehousePage({
             name="search" 
             defaultValue={searchQuery}
             placeholder={
-              activeView === "warehouse" ? "ابحث بالاسم أو رمز المنتج..." :
-              activeView === "deposits" ? "ابحث بالمنتج أو اسم المستلم..." :
-              "ابحث بالمنتج أو اسم الموظف..."
+                  activeView === "warehouse" ? "ابحث بالاسم أو رمز المنتج..." :
+                  activeView === "deposits" ? "ابحث بالمنتج أو اسم المستلم..." :
+                  activeView === "custodies" ? "ابحث بالمنتج أو اسم الموظف..." :
+                  activeView === "maintenance" ? "ابحث بالمنتج، رقم الصيانة، أو اسم العميل" : "بحث"
             }
             className="w-full rounded-lg border border-gray-300 py-2 pr-10 pl-3 text-sm focus:border-[#dda322] focus:outline-none focus:ring-1 focus:ring-[#dda322]" 
           />
@@ -442,7 +499,7 @@ export default async function WarehousePage({
           <div className="border-b bg-gray-50 px-6 py-4 flex items-center justify-between">
             <h2 className="text-lg font-bold text-[#061228] flex items-center gap-2">
               <Boxes size={20} className="text-purple-600" />
-              المنتجات في الودائع
+              المنتجات في الأمانات
             </h2>
             <span className="text-sm text-gray-500">{filteredDeposits.length} بند</span>
           </div>
@@ -464,7 +521,7 @@ export default async function WarehousePage({
                 {filteredDeposits.length === 0 ? (
                   <tr>
                     <td colSpan={permissions?.canManageWarehouse ? 5 : 4} className="px-6 py-8 text-center text-sm text-gray-500">
-                      لا توجد منتجات في الودائع.
+                      لا توجد منتجات في الأمانات.
                     </td>
                   </tr>
                 ) : (
@@ -580,6 +637,73 @@ export default async function WarehousePage({
                           />
                         </td>
                       )}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+            {/* ✅ MAINTENANCE VIEW */}
+      {activeView === "maintenance" && (
+        <section className="rounded-lg border bg-white shadow-sm overflow-hidden">
+          <div className="border-b bg-gray-50 px-6 py-4 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-[#061228] flex items-center gap-2">
+              <Wrench size={20} className="text-red-600" />
+              المنتجات قيد الصيانة
+            </h2>
+            <span className="text-sm text-gray-500">{filteredMaintenance.length} بند</span>
+          </div>
+          
+          <div className="overflow-x-auto force-ltr">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">رقم الصيانة</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">العميل</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">المنتج</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">الرقم التسلسلي</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">الكمية</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">الحالة</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredMaintenance.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-8 text-center text-sm text-gray-500">
+                      لا توجد منتجات قيد الصيانة حالياً.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredMaintenance.map((item) => (
+                    <tr key={item.id} className="hover:bg-gray-50 transition">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-mono font-bold text-[#dda322]">
+                        {item.maintenance.maintenanceNumber}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {item.maintenance.customer?.name || "غير محدد"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        <Link href={`/products/${item.product.id}`} className="hover:text-[#dda322] transition">
+                          {item.product.name}
+                        </Link>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-600">
+                        {item.serialNumber?.serialNumber || "—"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
+                        {item.quantity} {item.product.unit}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-semibold text-yellow-800">
+                          {item.status === "RECEIVED" ? "تم الاستلام" : 
+                           item.status === "UNDER_REPAIR" ? "قيد الإصلاح" :
+                           item.status === "WAITING_PARTS" ? "بانتظار قطع الغيار" :
+                           item.status === "COMPLETED" ? "مكتمل" : item.status}
+                        </span>
+                      </td>
                     </tr>
                   ))
                 )}

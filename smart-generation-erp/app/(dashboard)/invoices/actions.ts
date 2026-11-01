@@ -9,7 +9,11 @@ import { notifyUsersWithPermission } from "@/lib/notifications"
 import { auth } from "@/auth"
 
 export async function generateInvoice(formData: FormData) {
-  const session = await requirePermission("canCreateSalesOrders")
+  // ✅ FIX 1: Properly fetch session
+  const session = await auth()
+  if (!session) throw new Error("غير مصرح")
+  await requirePermission("canCreateSalesOrders")
+  
   const salesOrderId = formData.get("salesOrderId") as string
 
   try {
@@ -24,8 +28,12 @@ export async function generateInvoice(formData: FormData) {
     if (!salesOrder) throw new Error("أمر البيع غير موجود.")
     if (salesOrder.status !== "CONFIRMED") throw new Error("يمكن إصدار فاتورة فقط لأوامر البيع المؤكدة.")
 
+    // ✅ FIX 2: If invoice already exists (e.g., double-click), redirect to it instead of throwing
     const existing = await prisma.invoice.findUnique({ where: { salesOrderId } })
-    if (existing) throw new Error("تم إصدار فاتورة لهذا الطلب مسبقاً.")
+    if (existing) {
+      revalidatePath("/invoices")
+      redirect(`/invoices/${existing.id}`)
+    }
 
     const taxRate = settings?.taxRate.toNumber() || 0
     const subtotal = salesOrder.total.toNumber()
@@ -58,12 +66,23 @@ export async function generateInvoice(formData: FormData) {
       details: `فاتورة للعميل ${salesOrder.customer.name}`,
     })
 
-  } catch (error: any) {
-    throw new Error(error.message || "حدث خطأ أثناء إنشاء الفاتورة.")
-  }
+    revalidatePath("/invoices")
+    revalidatePath(`/sales-orders/${salesOrderId}`)
+    
+    // ✅ FIX 3: Redirect to the newly created invoice
+    redirect(`/invoices/${invoice.id}`)
 
-  revalidatePath("/invoices")
-  redirect("/invoices")
+  } catch (error: any) {
+    if (error.message === "NEXT_REDIRECT") throw error
+    
+    console.error("Generate invoice error:", error)
+    
+    revalidatePath("/sales-orders")
+    revalidatePath(`/sales-orders/${salesOrderId}`)
+    
+    // Redirect back with error message in URL so the page can display it
+    redirect(`/sales-orders/${salesOrderId}?error=${encodeURIComponent(error.message || "حدث خطأ أثناء إنشاء الفاتورة.")}`)
+  }
 }
 
 export async function markInvoiceAsPaid(formData: FormData) {

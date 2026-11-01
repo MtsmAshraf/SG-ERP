@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Printer, Download, X } from "lucide-react"
+import { Printer, Download, X, Wrench } from "lucide-react"
 
 export function PrintWarehouseButton({ activeView }: { activeView: string }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -48,7 +48,7 @@ export function PrintWarehouseButton({ activeView }: { activeView: string }) {
                 onClick={() => handlePrint("deposits")}
                 className="w-full rounded-lg border border-gray-300 px-4 py-3 text-right hover:bg-gray-50 transition flex items-center justify-between"
               >
-                <span className="font-medium text-gray-900">الودائع</span>
+                <span className="font-medium text-gray-900">الأمانات</span>
                 <Printer size={18} className="text-gray-500" />
               </button>
 
@@ -58,6 +58,15 @@ export function PrintWarehouseButton({ activeView }: { activeView: string }) {
               >
                 <span className="font-medium text-gray-900">العهد</span>
                 <Printer size={18} className="text-gray-500" />
+              </button>
+
+              {/* ✅ NEW: Maintenance Print Option */}
+              <button
+                onClick={() => handlePrint("maintenance")}
+                className="w-full rounded-lg border border-gray-300 px-4 py-3 text-right hover:bg-gray-50 transition flex items-center justify-between"
+              >
+                <span className="font-medium text-gray-900">الصيانة</span>
+                <Wrench size={18} className="text-gray-500" />
               </button>
 
               <div className="border-t pt-2 mt-2">

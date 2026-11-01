@@ -188,7 +188,7 @@ export default async function ProductDetailsPage({
         <div className="rounded-lg border bg-white p-4 shadow-sm">
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
             <Package size={16} className="text-purple-600" />
-            <span>الودائع</span>
+            <span>الأمانات</span>
           </div>
           <p className="text-2xl font-bold text-[#061228]">{depositStock}</p>
         </div>
@@ -224,11 +224,11 @@ export default async function ProductDetailsPage({
         <div className="rounded-lg border bg-white shadow-sm overflow-hidden">
           <div className="border-b bg-gray-50 px-4 py-3">
             <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
-              <Package size={16} className="text-purple-600" /> تفاصيل الودائع
+              <Package size={16} className="text-purple-600" /> تفاصيل الأمانات
             </h3>
           </div>
           {product.depositItems.length === 0 ? (
-            <div className="p-6 text-center text-sm text-gray-500">لا توجد ودائع لهذا المنتج.</div>
+            <div className="p-6 text-center text-sm text-gray-500">لا توجد أمانات لهذا المنتج.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 text-sm">

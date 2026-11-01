@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import { requirePermission } from "@/lib/auth-utils"
 import { notFound } from "next/navigation"
-import { Warehouse as WarehouseIcon, Boxes, Users, Package } from "lucide-react"
+import { Warehouse as WarehouseIcon, Boxes, Users, Package, Wrench } from "lucide-react"
 import { PrintActions } from "./PrintActions"
 
 export default async function WarehousePrintPage({
@@ -13,12 +13,13 @@ export default async function WarehousePrintPage({
   const params = await searchParams
   const type = (params.type as string) || "all"
 
-  if (!["warehouse", "deposits", "custodies", "all"].includes(type)) {
+  // ✅ 1. Added "maintenance" to the allowed types
+  if (!["warehouse", "deposits", "custodies", "maintenance", "all"].includes(type)) {
     notFound()
   }
 
-  // Fetch data based on type
-  const [allProducts, customItems, depositItems, custodyItems] = await Promise.all([
+  // ✅ 2. Fetch data based on type (Added maintenanceItems)
+  const [allProducts, customItems, depositItems, custodyItems, maintenanceItems] = await Promise.all([
     type === "warehouse" || type === "all"
       ? prisma.product.findMany({
           orderBy: { name: "asc" },
@@ -52,6 +53,18 @@ export default async function WarehousePrintPage({
               }
             },
             product: { select: { name: true, sku: true, unit: true } }
+          }
+        })
+      : Promise.resolve([]),
+    // ✅ NEW: Fetch maintenance items
+    type === "maintenance" || type === "all"
+      ? prisma.maintenanceItem.findMany({
+          where: { status: { notIn: ["RETURNED", "SCRAPPED"] } },
+          orderBy: { maintenance: { receivedDate: "desc" } },
+          include: {
+            maintenance: { select: { maintenanceNumber: true, customer: { select: { name: true } } } },
+            product: { select: { name: true, sku: true, unit: true } },
+            serialNumber: { select: { serialNumber: true } }
           }
         })
       : Promise.resolve([])
@@ -107,7 +120,7 @@ export default async function WarehousePrintPage({
         }
       `}</style>
 
-        <PrintActions />
+      <PrintActions />
 
       {/* Header */}
       <div className="border-b-2 border-[#061228] pb-4 mb-6">
@@ -115,6 +128,7 @@ export default async function WarehousePrintPage({
           {type === "warehouse" && "تقرير المخزن الرئيسي"}
           {type === "deposits" && "تقرير الودائع"}
           {type === "custodies" && "تقرير العهد"}
+          {type === "maintenance" && "تقرير الصيانة"} {/* ✅ Added */}
           {type === "all" && "تقرير المخزون الشامل"}
         </h1>
         <p className="text-sm text-gray-600">تاريخ الطباعة: {printDate}</p>
@@ -164,7 +178,6 @@ export default async function WarehousePrintPage({
             </table>
           )}
 
-          {/* Custom Items */}
           {customItems.length > 0 && (
             <>
               <h3 className="text-lg font-bold text-[#061228] mt-6 mb-3 flex items-center gap-2">
@@ -295,6 +308,54 @@ export default async function WarehousePrintPage({
                   </td>
                   <td className="border border-gray-300 px-3 py-2 text-sm text-center">
                     {custodyItems.reduce((sum, i) => sum + i.quantity, 0)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </section>
+      )}
+
+      {/* ✅ NEW: Maintenance Section */}
+      {(type === "maintenance" || type === "all") && (
+        <section className="mb-8">
+          <h2 className="text-xl font-bold text-[#061228] mb-4 flex items-center gap-2 border-b pb-2">
+            <Wrench size={20} className="text-red-600" />
+            المنتجات قيد الصيانة
+          </h2>
+          {maintenanceItems.length === 0 ? (
+            <p className="text-gray-500 text-center py-4">لا توجد منتجات قيد الصيانة</p>
+          ) : (
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="border border-gray-300 px-3 py-2 text-right text-sm font-semibold">رقم الصيانة</th>
+                  <th className="border border-gray-300 px-3 py-2 text-right text-sm font-semibold">العميل</th>
+                  <th className="border border-gray-300 px-3 py-2 text-right text-sm font-semibold">المنتج</th>
+                  <th className="border border-gray-300 px-3 py-2 text-right text-sm font-semibold">الرقم التسلسلي</th>
+                  <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold">الكمية</th>
+                </tr>
+              </thead>
+              <tbody>
+                {maintenanceItems.map((item) => (
+                  <tr key={item.id}>
+                    <td className="border border-gray-300 px-3 py-2 text-sm font-mono">{item.maintenance.maintenanceNumber}</td>
+                    <td className="border border-gray-300 px-3 py-2 text-sm">{item.maintenance.customer?.name || "—"}</td>
+                    <td className="border border-gray-300 px-3 py-2 text-sm">{item.product.name}</td>
+                    <td className="border border-gray-300 px-3 py-2 text-sm font-mono">{item.serialNumber?.serialNumber || "—"}</td>
+                    <td className="border border-gray-300 px-3 py-2 text-sm text-center font-bold">
+                      {item.quantity} {item.product.unit}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-50 font-bold">
+                  <td colSpan={4} className="border border-gray-300 px-3 py-2 text-sm text-right">
+                    الإجمالي
+                  </td>
+                  <td className="border border-gray-300 px-3 py-2 text-sm text-center">
+                    {maintenanceItems.reduce((sum, i) => sum + i.quantity, 0)}
                   </td>
                 </tr>
               </tfoot>
